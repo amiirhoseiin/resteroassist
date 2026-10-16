@@ -410,4 +410,10 @@ Environment hygiene: all testing was conducted on the **local Supabase stack**; 
 
 ### Deployment note
 
-Apply `20261017000000_security_hardening.sql` to the hosted Supabase project (Dashboard → SQL Editor → paste → Run) before or together with deploying the matching app build; then re-run the F-01 probe as a signed-in waiter against production to confirm the write path is closed. The production app is live at `resteroassist.vercel.app` (verified 2026-10-17).
+**Applied to production on 2026-10-17** — `20261017000000_security_hardening.sql` was executed against the hosted Supabase project (`nglcjbwkzthmgdnocqwz`, eu-west-1) and verified live:
+
+- `npm run verify:prod` — the F-01 probe as a signed-in waiter against the hosted database: **HARDENED — direct PATCH rejected (`permission denied for table orders`)**.
+- Post-apply schema check: `uq_orders_active_table` present; both `PAID_ORDER_IMMUTABLE` triggers present; `anon`/`authenticated` hold **SELECT only** on `orders`, `order_items`, `order_events`; every mutating RPC is `SECURITY DEFINER`.
+- The app-side companion change (`rpc_update_item_details` in `order-actions.ts`) is pushed to `master` (`603cea2`); Vercel auto-deploys this repository. The production app serves at `resteroassist.vercel.app`.
+
+For fresh environments: apply the migration (Dashboard → SQL Editor → paste → Run) before or together with deploying the matching app build, then re-run `npm run verify:prod` to confirm the write path is closed.

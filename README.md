@@ -161,6 +161,8 @@ The financial core (`orders`, `order_items`, `order_events`) is **server-authori
 
 An adversarial red-team audit of the running stack (16 findings, 3 critical, all executed live) and its remediation are documented in [SECURITY_AUDIT_REPORT.md](file:///d:/Freelance%20project/resteroassist/SECURITY_AUDIT_REPORT.md); the responsive fixes live in migration `20261017000000_security_hardening.sql` (see [DECISIONS.md](file:///d:/Freelance%20project/resteroassist/DECISIONS.md) #016).
 
+**Live verification.** The same F-01 attack (signed-in waiter PATCHing an order directly) is replayed against the hosted Supabase project by `npm run verify:prod` (`scripts/verify-production-security.cjs` — a safe, no-op probe that refuses to mutate data). Hosted status as of 2026-10-17: **HARDENED — direct PATCH rejected (`permission denied for table orders`)**.
+
 ---
 
 ## 🚀 Production Deployment (Vercel + Supabase Cloud)
