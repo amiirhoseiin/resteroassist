@@ -575,7 +575,7 @@ export function AiScratchpad({
                 <span>
                   منبع پردازش:{" "}
                   {sourceUsed === "openrouter"
-                    ? "مدل زبانی جمنای ۲.۵ فلش"
+                    ? "مدل زبانی هوش مصنوعی ابری (Google Gemini Flash)"
                     : "موتور هوشمند محلی (آفلاین)"}
                 </span>
                 {draftItems.length > 0 && (
