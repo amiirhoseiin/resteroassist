@@ -12,6 +12,7 @@ import {
   SplitSquareVertical,
   UtensilsCrossed,
   Users,
+  BookOpen,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { DEMO_ACCOUNTS, QUICK_SWITCH_KEYS, type DemoAccount } from "@/lib/demo-accounts";
@@ -19,24 +20,36 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
-  { href: "/pos", label: "ثبت سفارش سالن", icon: UtensilsCrossed },
+  { href: "/pos", label: "سفارش سالن", icon: UtensilsCrossed },
   { href: "/kds", label: "مانیتور آشپزخانه", icon: ChefHat },
   { href: "/cashier", label: "صندوق و تسویه", icon: Receipt },
-  { href: "/staff", label: "پرسنل و استخدام", icon: Users },
+  { href: "/menu", label: "منو و قیمت‌ها", icon: BookOpen },
+  { href: "/staff", label: "مدیریت پرسنل و دسترسی‌ها", icon: Users },
 ];
 
+export const ROLE_ALLOWED_ROUTES: Record<string, string[]> = {
+  waiter: ["/pos"],
+  kitchen: ["/kds"],
+  cashier: ["/cashier", "/pos"],
+  manager: ["/pos", "/kds", "/cashier", "/menu", "/staff"],
+  owner: ["/pos", "/kds", "/cashier", "/menu", "/staff"],
+};
 
 interface TopBarProps {
   restaurantName: string;
   branchName: string;
   fullName: string;
+  role?: string;
   roleLabel: string;
 }
 
-export function TopBar({ restaurantName, branchName, fullName, roleLabel }: TopBarProps) {
+export function TopBar({ restaurantName, branchName, fullName, role = "manager", roleLabel }: TopBarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { showToast } = useToast();
+
+  const allowedRoutes = ROLE_ALLOWED_ROUTES[role] || ROLE_ALLOWED_ROUTES.manager;
+  const visibleNavItems = NAV_ITEMS.filter((item) => allowedRoutes.includes(item.href));
 
   const [connection, setConnection] = useState<"connecting" | "connected" | "lost">("connecting");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -95,25 +108,25 @@ export function TopBar({ restaurantName, branchName, fullName, roleLabel }: TopB
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-slate-900 text-white px-4 py-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-slate-800">
+    <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md text-white px-4 py-2 flex items-center justify-between gap-3 border-b border-slate-800">
       {/* بخش آغازین (سمت راست در RTL): نام رستوران و نشانگر اتصال زنده */}
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 flex-shrink-0 items-center gap-3">
         <Link href="/pos" className="flex min-w-0 items-center gap-2.5">
-          <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-xl border border-brand-500/30 bg-brand-500/15 text-brand-400">
-            <UtensilsCrossed className="h-5 w-5" />
+          <span className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-xl border border-amber-500/30 bg-amber-500/15 text-amber-400">
+            <UtensilsCrossed className="h-4.5 w-4.5" />
           </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-bold">
+          <div className="min-w-0">
+            <span className="block truncate text-xs sm:text-sm font-bold text-slate-100">
               {restaurantName} — {branchName}
             </span>
-            <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
-              <span className="relative flex h-2.5 w-2.5">
+            <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-400">
+              <span className="relative flex h-2 w-2">
                 {connection === "connected" && (
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
                 )}
                 <span
                   className={cn(
-                    "relative inline-flex h-2.5 w-2.5 rounded-full",
+                    "relative inline-flex h-2 w-2 rounded-full",
                     connection === "connected"
                       ? "bg-emerald-400"
                       : connection === "connecting"
@@ -126,17 +139,17 @@ export function TopBar({ restaurantName, branchName, fullName, roleLabel }: TopB
                 {connection === "connected"
                   ? "متصل به سرور زنده"
                   : connection === "connecting"
-                  ? "در حال اتصال به سرور..."
-                  : "اتصال به سرور قطع است"}
+                  ? "در حال اتصال..."
+                  : "قطع ارتباط"}
               </span>
             </span>
-          </span>
+          </div>
         </Link>
       </div>
 
-      {/* مرکز: قرص‌های ناوبری بین نماها */}
-      <nav className="order-3 flex w-full items-center gap-1.5 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/60 p-1 md:order-none md:w-auto">
-        {NAV_ITEMS.map((item) => {
+      {/* مرکز: قرص‌های ناوبری بین نماها (منطبق با نقش کاربر) */}
+      <nav className="flex items-center gap-1 overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/70 p-1 flex-shrink">
+        {visibleNavItems.map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
           return (
@@ -144,13 +157,13 @@ export function TopBar({ restaurantName, branchName, fullName, roleLabel }: TopB
               key={item.href}
               href={item.href}
               className={cn(
-                "flex h-11 items-center gap-2 whitespace-nowrap rounded-lg px-4 text-xs font-bold transition-colors",
+                "flex h-8 sm:h-8.5 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 sm:px-3 text-xs font-bold transition-all",
                 isActive
-                  ? "bg-brand-500 text-white shadow"
+                  ? "bg-amber-500 text-slate-950 shadow-sm"
                   : "text-slate-300 hover:bg-slate-800 hover:text-white"
               )}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-3.5 w-3.5" />
               <span>{item.label}</span>
             </Link>
           );
@@ -158,30 +171,30 @@ export function TopBar({ restaurantName, branchName, fullName, roleLabel }: TopB
       </nav>
 
       {/* بخش پایانی (سمت چپ در RTL): تغییر سریع نقش دمو + خروج */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-shrink-0">
         <Link
           href="/demo-split"
           title="نمایش همزمان سالن و آشپزخانه"
-          className="hidden h-11 w-11 place-items-center rounded-xl border border-slate-700/80 bg-slate-800/70 text-slate-300 transition-colors hover:border-slate-500 hover:text-white lg:grid"
+          className="hidden h-9 w-9 place-items-center rounded-xl border border-slate-700/80 bg-slate-800/70 text-slate-300 transition-colors hover:border-slate-500 hover:text-white xl:grid"
         >
           <SplitSquareVertical className="h-4 w-4" />
         </Link>
 
-        <div className="hidden sm:flex flex-col items-end text-left px-2">
+        <div className="hidden md:flex flex-col items-end text-left px-1.5">
           <span className="text-xs font-bold text-slate-200">{fullName}</span>
-          <span className="text-[10px] text-brand-400">{roleLabel}</span>
+          <span className="text-[10px] text-amber-400">{roleLabel}</span>
         </div>
 
         <div className="relative">
           <button
             type="button"
             onClick={() => setIsMenuOpen((open) => !open)}
-            className="flex h-11 items-center gap-2 rounded-xl border border-slate-700/80 bg-slate-800/70 px-3.5 text-slate-200 transition-colors hover:border-slate-500"
+            className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-700/80 bg-slate-800/70 px-2.5 sm:px-3 text-slate-200 transition-colors hover:border-slate-500"
           >
-
-            <span className="whitespace-nowrap text-xs font-bold">تغییر سریع نقش در دمو</span>
+            <span className="whitespace-nowrap text-xs font-bold hidden sm:inline">تغییر نقش</span>
+            <span className="whitespace-nowrap text-xs font-bold sm:hidden">نقش</span>
             <ChevronDown
-              className={cn("h-4 w-4 text-slate-400 transition-transform", isMenuOpen && "rotate-180")}
+              className={cn("h-3.5 w-3.5 text-slate-400 transition-transform", isMenuOpen && "rotate-180")}
             />
           </button>
 
@@ -233,7 +246,7 @@ export function TopBar({ restaurantName, branchName, fullName, roleLabel }: TopB
           onClick={handleLogout}
           disabled={isLoggingOut}
           title="خروج از حساب"
-          className="grid h-11 w-11 place-items-center rounded-xl border border-slate-700/80 bg-slate-800/70 text-slate-300 transition-colors hover:border-rose-500/50 hover:text-rose-400 disabled:opacity-50"
+          className="grid h-9 w-9 place-items-center rounded-xl border border-slate-700/80 bg-slate-800/70 text-slate-300 transition-colors hover:border-rose-500/50 hover:text-rose-400 disabled:opacity-50"
         >
           {isLoggingOut ? (
             <Loader2 className="h-4 w-4 animate-spin" />

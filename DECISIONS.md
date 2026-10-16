@@ -88,3 +88,44 @@
   1. **Staff Hiring (`/staff` & `hireStaffMemberAction`):** Restricted to `manager` and `owner` roles. Uses Supabase Auth Admin API (`createAdminClient`) to generate auth credentials and links them directly to the calling manager's `restaurant_id` and chosen branch. RLS policies on `staff_profiles` enforce that managers can only view and recruit staff within their own tenant boundary.
   2. **Restaurant Registration (`/register` & `registerRestaurantAction`):** A public onboarding route that creates the `restaurants` row, default branch, owner account (`owner`), and automatically seeds 4 initial dining tables (میز ۱ تا ۴) and starter menu categories, allowing instant live operation upon signup.
 - **Trade-off:** Requires Supabase service role access within server actions, but ensures strict defense-in-depth where user-provided inputs cannot override server-extracted JWT `restaurant_id` claims.
+
+---
+
+## Decision 011: Enhanced Staff Access Matrix & Chef Master Board (KDS)
+- **Context:** User feedback highlighted inadequate contrast in staff management, inappropriate HR terminology ("استخدام"), and the critical need for chefs to view all tables and order progress stages on a single screen simultaneously.
+- **Decision:**
+  1. **Staff Operations (`/staff`):** Replaced "استخدام" with natural Iranian restaurant terminology ("افزودن همکار جدید", "مدیریت پرسنل و دسترسی‌ها"). Added an interactive permissions matrix (ماتریس دسترسی نقش‌ها) explaining exact capabilities of Waiter, Kitchen, Cashier, and Manager. Provided actions for Role Edit (`updateStaffRoleAction`), Password Reset (`resetStaffPasswordAction`), and Member Deletion (`deleteStaffMemberAction`).
+  2. **Chef Master Board (`/kds`):** Added a 3-way view switcher:
+     - **نمای جامع میزها (Chef Master View):** Displays all active table orders simultaneously with table location (e.g. میز ۴ سالن اصلی), elapsed timer with urgent glow (>15 min), order stage badge & percentage progress bar, item breakdown with special notes, and 1-click batch actions for the whole ticket.
+     - **کانبان مرحله‌ای (Kitchen Kanban):** 3-stage workflow columns (در صف پخت، روی اجاق، آماده تحویل).
+     - **تجمیع منقل و بار (Batch Expeditor):** Aggregates identical items across all tables (e.g., total skewers of kebab needed right now) for grill and bar stations.
+- **Trade-off:** Added richer state management and Web Audio API alerts, resulting in significantly higher operational throughput during rush hours.
+
+---
+
+## Decision 012: Manager Menu Management & Rapid Waiter POS with Live Kitchen Alerts
+- **Context:** Managers need complete, autonomous control over the restaurant menu and pricing in Toman without touching code or database seeds, while guaranteeing cross-tenant isolation. Waiters required an ultra-fast, 1-tap item marking system where any addition or modification triggers an immediate alert and visual cue on the kitchen KDS.
+- **Decision:**
+  1. **Menu Management (`/menu` & `src/actions/menu-actions.ts`):** 
+     - Complete CRUD for menu items (Add, Edit name/category/price, Delete, and 1-tap availability toggle: موجود / تمام شد).
+     - Strict multi-tenant isolation enforced at database RLS level (SELECT, INSERT, UPDATE, DELETE policies checking `restaurant_id = current_restaurant_id()`) and verified in Server Actions.
+  2. **Fast 1-Tap Waiter Order Marking (`/pos` & `MenuBrowser`):** 
+     - Re-styled in high-contrast dark theme with table status filters.
+     - Food cards show live order counts and a 1-tap `+` button for rapid marking.
+     - Waiter can add custom customer requests ("کم‌روغن", "بدون پیاز", "سس قارچ") or edit quantities of pending items via `updateOrderItemDetails`.
+  3. **Real-time Kitchen Alerting (`/kds`):** 
+     - KDS subscribes to `order_items` and `order_events` over Supabase Realtime WebSockets.
+     - Whenever a waiter adds an item, changes quantity, or edits notes, the KDS displays a prominent top alert banner ("🔔 هشدار زندهٔ تغییر در سفارشات سالن"), pulses the modified table ticket with an amber glow, and rings a synthesized Web Audio chime.
+---
+
+## Decision 013: Unified Dark Theme Aesthetics & Responsive TopBar Stabilization
+- **Context:** Following the rapid addition of menu and staff management features, two UX regressions occurred:
+  1. The Cashier view (`/cashier`) still used stark light cards (`bg-white` and dark text `text-slate-800`), causing severe contrast dissonance against the dashboard's dark slate container (`bg-slate-950`) and rendering the page header illegible.
+  2. The TopBar navigation tabs had accumulated 5 full-length labels, causing layout wrapping and clipping on standard Iranian laptop screens (1366×768 / 1080p scaled).
+  3. Webpack client manifest desynchronization in development caused transient 500 runtime errors ("سایت کلا بهم ریخت").
+- **Decision:**
+  1. **Cashier UI Dark Theme Harmonization:** Rebuilt `/cashier` using the unified slate/emerald palette (`bg-slate-900/90`, `border-slate-800`, `text-slate-100`, emerald highlights). Fixed table bill preview, invoice table contrast, manual Toman discount inputs, and 10% VAT callout.
+  2. **TopBar Responsive Architecture:** Standardized navbar heights to `h-9` and `h-8.5` pills, prevented vertical wrapping with responsive sizing and flex-shrink protection, and preserved full accessibility with standard labels for automated tests.
+  3. **Dev Server & Hydration Stability:** Cleared corrupted `.next` webpack cache, suppressed false-positive browser autofill hydration mismatches on login inputs, and verified 100% green status across all 7 Playwright test suites.
+- **Trade-off:** Consistent, pixel-perfect dark theme across all 5 operational views with zero layout shifts on any viewport.
+

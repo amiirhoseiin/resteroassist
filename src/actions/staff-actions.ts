@@ -288,3 +288,188 @@ export async function registerRestaurantAction(input: z.infer<typeof RegisterRes
     };
   }
 }
+
+
+
+/**
+ * Update staff member role / permissions (Manager/Owner only)
+ */
+export async function updateStaffRoleAction(input: {
+  staffId: string;
+  newRole: "waiter" | "kitchen" | "cashier" | "manager";
+}) {
+  const supabase = await createClient();
+
+  try {
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) {
+      return { success: false, error: "شما وارد سیستم نشده‌اید." };
+    }
+
+    const callerRole = user.app_metadata?.role;
+    const callerRestaurantId = user.app_metadata?.restaurant_id;
+
+    if (!callerRole || !["manager", "owner"].includes(callerRole)) {
+      return { success: false, error: "فقط مدیران مجاز به تغییر دسترسی همکاران هستند." };
+    }
+
+    const adminClient = createAdminClient();
+
+    // Verify target staff belongs to caller's restaurant
+    const { data: targetProfile, error: targetErr } = await adminClient
+      .from("staff_profiles")
+      .select("id, role, restaurant_id, full_name")
+      .eq("id", input.staffId)
+      .eq("restaurant_id", callerRestaurantId)
+      .single();
+
+    if (targetErr || !targetProfile) {
+      return { success: false, error: "همکار مورد نظر در این رستوران یافت نشد." };
+    }
+
+    if (targetProfile.role === "owner" && callerRole !== "owner") {
+      return { success: false, error: "تغییر دسترسی مالک مجموعه امکان‌پذیر نیست." };
+    }
+
+    // Update staff profile role
+    await adminClient
+      .from("staff_profiles")
+      .update({ role: input.newRole })
+      .eq("id", input.staffId);
+
+    // Update auth app_metadata
+    await adminClient.auth.admin.updateUserById(input.staffId, {
+      app_metadata: { role: input.newRole },
+    });
+
+    logAuditEvent({
+      restaurant_id: callerRestaurantId,
+      actor_id: user.id,
+      action: "staff_role_updated",
+      metadata: {
+        target_staff_id: input.staffId,
+        old_role: targetProfile.role,
+        new_role: input.newRole,
+      },
+    });
+
+    revalidatePath("/staff");
+    return { success: true };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "خطا در تغییر نقش پرسنل",
+    };
+  }
+}
+
+/**
+ * Remove/delete a staff member (Manager/Owner only)
+ */
+export async function deleteStaffMemberAction(staffId: string) {
+  const supabase = await createClient();
+
+  try {
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) {
+      return { success: false, error: "شما وارد سیستم نشده‌اید." };
+    }
+
+    const callerRole = user.app_metadata?.role;
+    const callerRestaurantId = user.app_metadata?.restaurant_id;
+
+    if (!callerRole || !["manager", "owner"].includes(callerRole)) {
+      return { success: false, error: "فقط مدیران مجاز به حذف همکاران هستند." };
+    }
+
+    if (user.id === staffId) {
+      return { success: false, error: "نمی‌توانید حساب کاربری خودتان را حذف کنید." };
+    }
+
+    const adminClient = createAdminClient();
+
+    // Verify target staff belongs to caller's restaurant
+    const { data: targetProfile, error: targetErr } = await adminClient
+      .from("staff_profiles")
+      .select("id, role, restaurant_id")
+      .eq("id", staffId)
+      .eq("restaurant_id", callerRestaurantId)
+      .single();
+
+    if (targetErr || !targetProfile) {
+      return { success: false, error: "همکار مورد نظر در این رستوران یافت نشد." };
+    }
+
+    if (targetProfile.role === "owner") {
+      return { success: false, error: "مالک مجموعه قابل حذف نیست." };
+    }
+
+    // Delete staff profile and user
+    await adminClient.from("staff_profiles").delete().eq("id", staffId);
+    await adminClient.auth.admin.deleteUser(staffId);
+
+    logAuditEvent({
+      restaurant_id: callerRestaurantId,
+      actor_id: user.id,
+      action: "staff_deleted",
+      metadata: { deleted_staff_id: staffId },
+    });
+
+    revalidatePath("/staff");
+    return { success: true };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "خطا در حذف همکار",
+    };
+  }
+}
+
+/**
+ * Reset staff password by manager (Manager/Owner only)
+ */
+export async function resetStaffPasswordAction(input: {
+  staffId: string;
+  newPassword: string;
+}) {
+  const supabase = await createClient();
+
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    const callerRole = user?.app_metadata?.role;
+    const callerRestaurantId = user?.app_metadata?.restaurant_id;
+
+    if (!callerRole || !["manager", "owner"].includes(callerRole)) {
+      return { success: false, error: "فقط مدیران مجاز به تغییر رمز عبور پرسنل هستند." };
+    }
+
+    if (input.newPassword.length < 6) {
+      return { success: false, error: "رمز عبور جدید باید حداقل ۶ کاراکتر باشد." };
+    }
+
+    const adminClient = createAdminClient();
+
+    // Verify target belongs to caller's restaurant
+    const { data: targetProfile } = await adminClient
+      .from("staff_profiles")
+      .select("id")
+      .eq("id", input.staffId)
+      .eq("restaurant_id", callerRestaurantId)
+      .single();
+
+    if (!targetProfile) {
+      return { success: false, error: "پرسنل مورد نظر در این رستوران یافت نشد." };
+    }
+
+    await adminClient.auth.admin.updateUserById(input.staffId, {
+      password: input.newPassword,
+    });
+
+    return { success: true };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "خطا در تنظیم مجدد رمز عبور",
+    };
+  }
+}

@@ -27,12 +27,13 @@ Resteroassist introduces the **AI Smart Waiter Scratchpad**, allowing waiters to
 
 ### 2.2 Provider & Model Selection
 - **Selected Provider:** OpenRouter API
-- **Primary Model:** `google/gemini-2.5-flash`
-- **Fallback Model:** `openai/gpt-4o-mini`
+- **Primary Model (when `OPENROUTER_API_KEY` is configured):** `google/gemini-2.5-flash`
+- **Default Engine (no external key required):** Resteroassist's built-in **offline smart engine** — a deterministic Persian NLP pipeline (orthographic normalization, token-span fuzzy matching, quantity/note attribution) that runs inside the Next.js server with zero network dependency.
 - **Rationale:** 
   1. Exceptionally high fluency with colloquial Persian phrasing, Iranian dish names, and food customizations.
   2. Sub-second to 1.5-second time-to-first-token (TTFT).
   3. Seamless API accessibility for Iranian developers via OpenRouter without direct sanction barriers.
+  4. The offline engine keeps the scratchpad fully functional — correct quantities, per-item notes, and unmatched-text warnings — even without internet or a configured API key.
 
 ### 2.3 Defense-in-Depth & Security Guards
 
@@ -47,10 +48,14 @@ Resteroassist introduces the **AI Smart Waiter Scratchpad**, allowing waiters to
 3. **Zod Structured Output Schema:**
    - Model output is validated against a strict Zod schema (`ParsedOrderResponseSchema`).
    - If output fails validation or contains IDs not in the active restaurant's menu catalog, it is immediately discarded.
-4. **4-Second Hard Timeout:**
-   - An `AbortController` enforces a 4,000ms hard deadline on external API calls.
-5. **Local Persian Heuristic Fallback (Offline Survival):**
-   - If OpenRouter is unreachable, timed out, or internet connectivity is disrupted, the system transparently falls back to an internal Persian keyword matcher.
+4. **6-Second Hard Timeout:**
+   - An `AbortController` enforces a 6,000ms hard deadline on external API calls; on timeout the offline engine takes over seamlessly.
+5. **Offline Smart Engine (Default Fallback):**
+   - If OpenRouter is unreachable, timed out, not configured, or its output fails validation, the system transparently falls back to the built-in Persian engine.
+   - It normalizes Persian orthography (ی/ي، ک/ك، نیم‌فاصله، ارقام فارسی/عربی، اعداد لفظی مرکب مانند «بیست و دو» → ۲۲) and matches menu names with fuzzy token-span alignment — including names containing «و» such as «چای و باقلوای قزوین».
+   - Quantities are attributed per item from the correct clause; notes («بدون نعنا»، «کره اضافه»، «کم روغن») attach to their nearest item without bleeding into other dishes.
+   - Nothing is dropped silently: unmatched fragments are returned in `unmatched_text`, per-item `confidence` is reported, and the waiter can edit quantity/notes or swap items in the preview dialog before committing.
+   - Voice dictation (Persian `fa-IR`) is available via the browser Web Speech API where supported.
    - Waiters are never blocked from entering orders.
 
 ---
@@ -63,4 +68,5 @@ Resteroassist introduces the **AI Smart Waiter Scratchpad**, allowing waiters to
   - Network & Model Generation: ~800ms – 1,400ms.
   - Zod Validation & DB Match: ~15ms.
   - Total Tableside Time Saved: ~30 to 45 seconds per table interaction compared to manual menu browsing.
+- **Offline Smart Engine (default deployment):** resolves a full note in under 10ms entirely inside the server — no network round-trip, no token cost.
 

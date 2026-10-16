@@ -1,99 +1,83 @@
-# راهنمای تحویل و استفاده مدیران مجموعه (HANDOVER.md)
+# Shift Manager Operations & Handover Guide (HANDOVER.md)
 
-**سامانه عملیات زنده سفارش تا تسویه رستوران و کافه (Resteroassist)**  
-**مخاطب سند:** مالکان، مدیران داخلی و سرپرستان شیفت رستوران و کافه  
-**زبان سند:** غیرفنی و کاربردی برای محیط کاری کف سالن  
-
----
-
-## ۱. مقدمه و این سامانه چه کمکی به شما می‌کند؟
-
-اگر در شب‌های شلوغ پایان هفته (به‌ویژه پنج‌شنبه و جمعه‌ها) رستوران یا کافه اداره کرده باشید، این صحنه‌ها برایتان آشناست:
-1. **برگه‌های گم‌شده و سفارش‌های پیام‌رسان‌ها:** گارسون‌ها سفارش را روی تکه‌کاغذ یا گروه‌های واتساپ و بله می‌نویسند. دست‌خط بد خوانده نمی‌شود، برگه آب می‌بیند، یا آشپزخانه یادداشت «کم‌شیر» یا «کره اضافه» را متوجه نمی‌شود.
-2. **سفارش‌های دوم که از صندوق جا می‌مانند:** مشتری بعد از شروع غذا دوغ اضافه یا سیب‌زمینی سفارش می‌دهد. گارسون شفاهی به آشپز می‌گوید ولی موقع حساب‌کتاب پای صندوق، مشتری بدون پرداخت آن اقلام رستوران را ترک می‌کند (هدررفت مستقیم درآمد).
-3. **سردرگمی صندوق‌دار در محاسبه ارزش افزوده ۱۰٪:** از ابتدای سال ۱۴۰۳ مالیات بر ارزش افزوده به ۱۰ درصد افزایش یافته است. محاسبه دستی آن پای صندوق وقت مشتری را تلف کرده و باعث اختلاف حساب می‌شود.
-
-**هدف این سیستم:** پایان دادن به هرگونه کاغذبازی و چت‌بازی در زنجیره «میز سالن $\rightarrow$ آشپزخانه $\rightarrow$ صندوق» به نحوی که هیچ آیتمی گم نشود و هیچ درآمدی نسوزد.
+**System:** Resteroassist — Real-Time Restaurant & Café Order-to-Cash Platform  
+**Audience:** Restaurant Owners, General Managers, Shift Supervisors, and Floor Leads  
+**Tone:** Practical, operational, floor-ready  
 
 ---
 
-## ۲. گردش کار گام‌به‌گام در یک شیفت کاری
+## 1. Executive Overview & Pain Points Solved
 
-### گام اول: گارسون سالن (ثبت سریع با گفتار یا انتخاب لمسی)
-- گارسون با گوشی یا تبلت وارد صفحه **«میزها و سفارش‌گیر»** می‌شود.
-- با لمس شماره میز (مثلاً میز ۴)، پنجره سفارش باز می‌شود.
-- **دستیار هوشمند صوتی/متنی (Scratchpad):**  
-  گارسون نیازی ندارد بین دسته‌بندی‌های مختلف چرخ بزند. همان جمله‌ای که مشتری می‌گوید را تایپ یا دیکته می‌کند:  
+During busy weekend dinner rushes, restaurants and cafés commonly suffer from three critical operational breakdowns:
+
+1. **Lost Paper Slips & Messaging App Chaos:** Waiters scrawl orders on scraps of paper or send unformatted text in messaging groups. Handwriting is misread, paper gets soiled on the pass, and special customer requests (e.g. *"extra butter"*, *"no eggplants"*, *"less milk"*) are overlooked.
+2. **Unbilled Add-on Items:** Diners frequently request additional drinks, appetizers, or desserts mid-meal. Waiters shout verbal requests to the kitchen without recording them, leading to customers leaving without being billed for secondary items (direct revenue leakage).
+3. **Cashier Confusion with Statutory 10% VAT:** Since 1403, Value-Added Tax (VAT) is legally mandated at 10%. Manual calculations at the checkout desk delay customer departures and introduce bookkeeping discrepancies.
+
+**Core Mission:** Eliminate all paper and uncoordinated messaging across the **Dining Room $\rightarrow$ Kitchen $\rightarrow$ Cashier** lifecycle, ensuring zero lost items, accurate tax reporting, and zero revenue leakage.
+
+---
+
+## 2. Step-by-Step Shift Operations
+
+### Step 1: Dining Room Waiters (Tableside Ordering)
+- Waiters access **Floor POS** (`/pos`) on their smartphone or tablet.
+- Tapping a table (e.g. Table 4) opens the live order ticket.
+- **AI Smart Waiter Scratchpad:**  
+  Instead of scrolling through multi-level menus, waiters can type or voice-dictate natural colloquial Persian customer notes:  
   *«۲ تا کباب لقمه یکی با کره اضافه، یه ته‌چین بدون بادمجان و دو تا دوغ محلی»*  
-  دکمه **«استخراج ساختار یافته»** را می‌زند. سیستم در کسری از ثانیه آیتم‌ها را از منوی رستوران با قیمت رسمی دیتابیس شناسایی کرده و با یک کلیک ثبت می‌کند.
-- **ثبت همزمان چند گارسون:** اگر همزمان گارسون دیگری برای همان میز نوشیدنی اضافه کند، سیستم هیچ موردی را پاک نمی‌کند و هر دو با هم ثبت می‌شوند.
+  Tapping **«استخراج ساختار یافته» (Parse Structured Order)** instantly resolves the dishes against the active menu catalog with official database pricing.
+- **Concurrent Waiter Ordering:** If two waiters take orders for the same table simultaneously (e.g. food vs. drinks), both orders merge seamlessly without race conditions or data loss.
 
-### گام دوم: آشپزخانه و بار (مانیتور KDS)
-- در آشپزخانه، تبلت یا مانیتور روی صفحه **«نمایشگر آشپزخانه (KDS)»** قرار دارد.
-- به محض ثبت سفارش توسط گارسون، سفارش با یک بوق کوتاه روی مانیتور ظاهر می‌شود (بدون نیاز به زدن دکمه رفرش).
-- آشپز با شروع پخت، دکمه **«شروع پخت»** را می‌زند.
-- **قفل هوشمند آشپزخانه (Cooking Lock):**  
-  به محض اینکه آشپزخانه دکمه «شروع پخت» را زد، گارسون دیگر **نمی‌تواند** سرخود غذا را از روی گوشی‌اش لغو کند! اگر مشتری پشیمان شود، سیستم هشدار می‌دهد: *«آشپزخانه پخت را آغاز کرده است؛ لغو نیازمند هماهنگی با مدیر شیفت است.»* این ویژگی مانع از دورریز گوشت و مواد گران‌قیمت می‌شود.
-- وقتی غذا آماده شد، آشپز دکمه **«آماده شد»** را می‌زند و مهماندار سالن غذا را تحویل می‌گیرد.
+### Step 2: Kitchen & Bar (Kitchen Display System — KDS)
+- Kitchen tablets or monitors display the **Kitchen Monitor** (`/kds`).
+- New orders appear immediately with an audible chime and amber alert banner via Supabase Realtime WebSockets (no manual browser refresh needed).
+- Chefs start preparation by clicking **«شروع پخت» (Start Cooking)** on the ticket.
+- **Cooking Lock Invariant:**  
+  Once an item status transitions to `preparing`, floor staff are locked from cancelling it. If a guest changes their mind, the system notifies the waiter: *"Kitchen has already started cooking; cancellation requires shift-manager approval."* This directly prevents kitchen disputes and meat/ingredient wastage.
+- When food is ready, the chef clicks **«آماده شد» (Mark Ready)** to alert floor staff for immediate pickup.
 
-### گام سوم: صندوق‌دار و بستن فاکتور (تسویه و پرداخت)
-- صندوق‌دار در ایستگاه صندوق صفحه **«صندوق و فاکتور»** را باز می‌کند.
-- میزهایی که غذایشان تمام شده در ستون سمت راست با برچسب مشخص نمایان هستند.
-- با انتخاب میز (مثلاً میز ۱۲)، لیست دقیق اقلام مصرفی مشتری نمایش داده می‌شود.
-- **اعمال تخفیف:** اگر مشتری تخفیف دارد (مثلاً ۵۰,۰۰۰ تومان یا ۱۰٪)، صندوق‌دار مبلغ را وارد کرده و دکمه ثبت تخفیف را می‌زند.
-- **محاسبه خودکار ارزش افزوده ۱۰٪:**  
-  سامانه به طور دقیق فرمول قانونی را اجرا می‌کند:  
-  $$\text{مبلغ پس از تخفیف} \times ۰.۱۰ = \text{ارزش افزوده قانونی}$$  
-  مبلغ نهایی شفاف همراه با تفکیک مالیات نمایش داده می‌شود.
-- مشتری روی دستگاه کارتخوان بانکی موجود در رستوران کارت می‌کشد و صندوق‌دار دکمه سبز **«تسویه نهایی و بستن فاکتور»** را می‌زند. میز فوراً آزاد شده و فاکتور در سوابق ذخیره می‌شود.
+### Step 3: Cashier & Settlement (Checkout POS)
+- Cashiers open **Cashier & Checkout** (`/cashier`).
+- Tables awaiting settlement appear in the sidebar with live item counts and unbilled timers.
+- Selecting a table loads an 80mm fiscal receipt preview detailing all consumed items, quantities, and preparation notes.
+- **Discounts:** Cashiers can apply quick 5% or 10% discounts or enter custom Toman amounts.
+- **Automatic 10% VAT Calculation:**  
+  $$\text{Net Total} = \text{Subtotal} - \text{Discount}$$
+  $$\text{VAT (10\%)} = \lfloor \text{Net Total} \times 0.10 \rfloor$$
+  $$\text{Grand Total} = \text{Net Total} + \text{VAT}$$
+- **Payment Method Selection:** Cashiers select the payment channel:
+  - POS card reader (with optional reference number for bank reconciliation).
+  - Cash (with change-due calculation).
+  - Card-to-Card / Sheba.
+  - Split bill (Dongi).
+- Clicking **«تأیید نهایی پرداخت و بستن میز» (Confirm Payment & Settle)** seals the bill atomically, releases the table for new diners, and archives the transaction in shift records.
 
 ---
 
-## ۳. در صورت بروز اختلال یا شرایط اضطراری چه کنیم؟
+## 3. Incident Management & Edge Cases (SOP)
 
-| سناریوی مشکل | رفتار سیستم و راهکار پرسنل |
+| Scenario | System Behavior & Staff Action |
 | :--- | :--- |
-| **اینترنت بین‌الملل قطع یا به شدت کند است** | سیستم طوری طراحی شده که به صورت محلی و داخلی کار می‌کند. دستیار هوشمند به صورت خودکار به «موتور واژه‌شناس محلی» سوئیچ می‌کند و بدون نیاز به اینترنت خارجی کلمات غذا و تعداد را می‌شناسد. همچنین پرسنل می‌توانند با کلیک روی آیتم‌های منو به صورت دستی سفارش ثبت کنند. |
-| **دو گارسون همزمان خواستند برای یک میز غذا اضافه کنند** | هیچ تداخلی پیش نمی‌آید. سیستم هر آیتم را جداگانه ثبت می‌کند و سفارش‌های هر دو نفر در فاکتور نهایی و مانیتور آشپزخانه کنار هم قرار می‌گیرند. |
-| **مشتری در لحظه تسویه پای صندوق هوس چای یا دسر کرد** | اگر گارسون در لحظه‌ای که صندوق‌دار فاکتور را باز کرده آیتمی اضافه کند، سامانه به صندوق‌دار اخطار می‌دهد: *«نسخه فاکتور تغییر کرد؛ لطفاً مبالغ را مجدداً بازبینی کنید»* تا ریالی از هزینه فاکتور جا نماند. |
-| **برق آشپزخانه لحظه‌ای رفت یا تبلت خاموش شد** | تمام سفارش‌ها در لحظه در دیتابیس ثبت شده‌اند. پس از روشن شدن دستگاه، مانیتور KDS دقیقاً همان سفارش‌های باز را به همان شکل نمایش می‌دهد و هیچ سفارشی گم نمی‌شود. |
+| **Internet Outage or High Latency** | The system is designed to operate locally. The Smart Waiter Scratchpad automatically falls back to its built-in offline Persian NLP pipeline without needing external cloud APIs. Manual 1-tap item selection remains fully functional. |
+| **Simultaneous Order Additions** | Row-level PostgreSQL concurrency ensures additions from multiple devices insert independent item records. No orders overwrite each other. |
+| **Late Item Addition During Checkout** | If a waiter adds an item while the cashier is reviewing the bill, the invoice version increments and prompts the cashier to review the updated total before finalizing payment. |
+| **Sudden Kitchen Power Loss** | All orders, statuses, and versions are continuously committed to PostgreSQL. When power returns and devices restart, the KDS displays the exact live order board. |
 
 ---
 
-## ۴. مواردی که در این نسخه (MVP) وجود ندارد (مرزهای سیستم)
+## 4. Administrative Controls (Menu & Staff)
 
-برای حفظ بالاترین سرعت و پایداری در شیفت‌های شلوغ، این امکانات در فاز اول عمداً پیاده نشده‌اند:
-1. **اتصال مستقیم کابل کارتخوان بانکی به نرم‌افزار:** صندوق‌دار مبلغ کل را روی کارتخوان دستی وارد کرده و فاکتور را ثبت می‌کند.
-2. **ارسال مستقیم به سامانه مودیان مالیاتی با توکن سخت‌افزاری:** مالیات ارزش افزوده به دقت ۱۰٪ محاسبه و گزارش می‌شود اما ارسال به کارپوشه مؤدیان در فاز شرکتی بعدی فعال خواهد شد.
-3. **انبارداری و کسر گرمی مواد اولیه (BOM):** برای جلوگیری از کندی نرم‌افزار، وزن گوشت و برنج در این نسخه محاسبه نمی‌شود و تمرکز ۱۰۰٪ روی گردش سفارش سالن و آشپزخانه است.
+1. **Staff Management (`/staff`):**
+   - General Managers and Owners can recruit new staff members, set credentials, and assign branches and roles (`waiter`, `kitchen`, `cashier`, `manager`).
+   - Role permissions can be updated on the fly; password resets and role terminations take effect immediately.
 
----
-
-## ۵. حساب‌های آماده برای شروع کار شیفت
-
-برای ورود به برنامه از آدرس سامانه استفاده کنید و در صفحه ورود با یک کلیک نقش مورد نظرتان را انتخاب کنید:
-- **گارسون سالن (روحی):** `amir@roohi.ir` — رمز: `Password123!`
-- **سرآشپز (روحی):** `hassan@roohi.ir` — رمز: `Password123!`
-- **صندوق‌دار (روحی):** `sara@roohi.ir` — رمز: `Password123!`
-- **مدیر کل (روحی):** `reza@roohi.ir` — رمز: `Password123!`
-- **مدیر برگر هیزم (تست تفکیک شعبه/مستأجر):** `farhad@hizom.ir` — رمز: `Password123!`
-
+2. **Menu & Price Management (`/menu`):**
+   - Managers have complete control over item names, categories, and Toman pricing.
+   - When a dish runs out during a shift, toggling the availability badge (`موجود` / `تمام شد`) immediately updates tableside waiter pickers across all floor devices.
 
 ---
 
-## ۶. راهنمای استخدام پرسنل جدید و ثبت‌نام رستوران جدید
+## 5. Contact & Support
 
-### الف) استخدام و تعریف همکاران جدید توسط مدیر:
-1. مدیر رستوران پس از ورود به سامانه، از نوار بالای صفحه روی گزینه **«پرسنل و استخدام»** (`/staff`) کلیک می‌کند.
-2. روی دکمه نارنجی‌رنگ **«استخدام پرسنل جدید»** کلیک کنید.
-3. اطلاعات همکار جدید را وارد نمایید:
-   - **نام و نام‌خانوادگی**
-   - **نقش کاری:** گارسون سالن، آشپزخانه (KDS)، صندوق‌دار، یا مدیر شیفت
-   - **شعبه فعالیت:** انتخاب شعبه مورد نظر
-   - **ایمیل پرسنلی و رمز عبور اولیه**
-4. دکمه **«تایید و استخدام»** را بزنید. حساب کاربری فوراً فعال شده و پرسنل جدید می‌تواند بلافاصله با اطلاعات خود وارد سامانه شود.
-
-### ب) ثبت‌نام و افتتاح رستوران یا کافه جدید:
-1. در صفحه ورود (`/login`) روی لینک **«ثبت‌نام و عضویت مجموعه»** کلیک کنید یا مستقیماً به آدرس `/register` بروید.
-2. نام رستوران یا کافه، نام شعبه، نام مدیر، ایمیل و رمز عبور را وارد کنید.
-3. پس از ثبت‌نام، سامانه به طور خودکار میزهای پیش‌فرض و منوی اولیه را می‌سازد و مدیر را مستقیماً وارد فضای کار اختصاصی و کاملاً ایزوله مجموعه جدید می‌کند.
+For system administration, schema migrations, or infrastructure support, refer to [README.md](file:///d:/Freelance%20project/resteroassist/README.md) and [DECISIONS.md](file:///d:/Freelance%20project/resteroassist/DECISIONS.md).

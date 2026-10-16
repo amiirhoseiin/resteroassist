@@ -38,11 +38,12 @@ export default async function DashboardLayout({
   const roleLabel = ROLE_LABELS[role] || role;
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-100">
+    <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100">
       <TopBar
         restaurantName={restaurantName}
         branchName={branchName}
         fullName={fullName}
+        role={role}
         roleLabel={roleLabel}
       />
       <main className="flex flex-1 flex-col">{children}</main>

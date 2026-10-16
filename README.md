@@ -1,135 +1,172 @@
-# 🍽️ Resteroassist | سامانه عملیات زنده سفارش تا تسویه رستوران و کافه
+# 🍽️ Resteroassist | Real-Time Restaurant & Café Order-to-Cash Platform
 
-[![Next.js](https://img.shields.io/badge/Next.js-15.1-black?logo=next.js)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15.5-black?logo=next.js)](https://nextjs.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%20%7C%20RLS%20%7C%20Realtime-emerald?logo=supabase)](https://supabase.com/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-RTL%20%7C%20Vazirmatn-sky?logo=tailwindcss)](https://tailwindcss.com/)
-[![Playwright](https://img.shields.io/badge/E2E%20Tests-Playwright-green?logo=playwright)](https://playwright.dev/)
+[![Playwright](https://img.shields.io/badge/E2E%20Tests-Playwright%20(9%2F9%20Pass)-green?logo=playwright)](https://playwright.dev/)
 [![VAT](https://img.shields.io/badge/VAT%201403-10%25%20Statutory-amber)](#)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript)](https://www.typescriptlang.org/)
 
-سامانه تخصصی مدیریت شیفت‌های شلوغ رستوران‌ها و کافه‌های ایرانی برای حذف کامل کاغذبازی و چت‌گروه‌ها در چرخه **«سفارش سر میز $\rightarrow$ نمایشگر آشپزخانه (KDS) $\rightarrow$ صندوق و تسویه مالی با محاسبه ارزش افزوده ۱۰٪»**.
+A high-performance, real-time operations system designed for Iranian independent restaurants and cafés. Resteroassist completely eliminates paper tickets and messaging-app chaos across the critical shift workflow: **Tableside Waiter Order $\rightarrow$ Kitchen Display System (KDS) $\rightarrow$ Cashier Settlement with Statutory 10% VAT**.
 
 ---
 
-## 🏗️ معماری سامانه (System Architecture)
+## 🏗️ System Architecture
 
 ```
-[کاربران سالن و آشپزخانه: Next.js 15 App Router (راست‌چین RTL / فونت وزیرمتن)]
+[Dining Room & Kitchen: Next.js 15 App Router (RTL / Vazirmatn / Dark Slate Theme)]
        │
-       ├── ۱. اشتراک‌های بلادرنگ (WebSockets)
-       │      └──► [Supabase Realtime (postgres_changes) & PostgREST (محافظت‌شده با RLS)]
+       ├── 1. Live Subscriptions & Realtime State (WebSockets)
+       │      └──► [Supabase Realtime (postgres_changes) & PostgREST (Protected by RLS)]
        │
-       ├── ۲. جهش‌های اتمیک وضعیت (ثبت سفارش / تغییر وضعیت پخت / تسویه مالی)
-       │      └──► [توابع ذخیره‌شده Postgres RPC با قفل‌گذاری سطرها (SECURITY INVOKER)]
+       ├── 2. Atomic State Mutations & Business Invariants
+       │      └──► [Postgres Stored RPC Functions with Row-Level Granularity (SECURITY INVOKER)]
        │             ├── rpc_create_order
-       │             ├── rpc_add_order_item (قیمت‌گذاری Zero-Trust از دیتابیس)
-       │             ├── rpc_update_item_status (قفل همزمانی نسخه version)
-       │             ├── rpc_cancel_order_item (قفل پخت هوشمند آشپزخانه)
-       │             ├── rpc_apply_order_discount (اعمال تخفیف با دسترسی صندوق/مدیر)
-       │             └── rpc_settle_order (محاسبه دقیق ارزش افزوده ۱۰٪ و بستن فاکتور)
+       │             ├── rpc_add_order_item (Zero-Trust pricing resolved from DB catalog)
+       │             ├── rpc_update_item_status (Optimistic locking via version column)
+       │             ├── rpc_cancel_order_item (Cooking Lock invariant: protects food on stove)
+       │             ├── rpc_apply_order_discount (Restricted to Cashier/Manager roles)
+       │             └── rpc_settle_order (10% VAT calculation & atomic invoice sealing)
        │
-       └── ۳. دستیار صوتی/متنی یادداشت هوشمند گارسون (AI Scratchpad)
-              └──► [Server Action در Next.js]
-                     ├── پاکسازی ورودی و محدودیت حداکثر ۳۰۰ کاراکتر
-                     ├── ارسال کاتالوگ منوی جاری به OpenRouter (Gemini 2.5 Flash)
-                     ├── اعتبارسنجی خروجی ساختاریافته با Zod Schema
-                     └── فال‌بک خودکار به موتور محلی در شرایط قطعی اینترنت
+       └── 3. AI Smart Waiter Scratchpad (Voice/Text to Structured Order Items)
+              └──► [Next.js Server Action]
+                     ├── Input sanitization & 300-character boundary clamp
+                     ├── Dynamic menu context injection
+                     ├── Structured output validation via Zod Schema
+                     └── Offline Smart Engine fallback (zero-dependency deterministic Persian NLP)
 ```
 
 ---
 
-## ⚡ راه‌اندازی سریع با یک فرمان (One-Command Setup)
+## ⚡ Quickstart (One-Command Setup)
 
-### پیش‌نیازها
-- **Node.js**: نسخه 20+ یا 22+
-- **Docker Desktop**: در حال اجرا
+### Prerequisites
+- **Node.js**: `v20+` or `v22+`
+- **Docker Desktop**: Running locally
 
-### مراحل اجرا
+### Execution Steps
 ```bash
-# ۱. کلون و نصب پکیج‌ها
-git clone https://github.com/your-username/resteroassist.git
+# 1. Clone the repository and install dependencies
+git clone https://github.com/amiirhoseiin/resteroassist.git
 cd resteroassist
 npm install
 
-# ۲. روشن کردن استک کانتینری Supabase (شامل Postgres, Auth, Realtime, Studio)
+# 2. Start local Supabase container stack (Postgres, Auth, Realtime, Studio)
 npx supabase start
 
-# ۳. تنظیم متغیرهای محیطی
+# 3. Configure environment variables
 cp .env.example .env.local
 
-# ۴. اجرای بیلد و سرور توسعه
+# 4. Build and launch application
 npm run build
-npm run dev
+npm run start
 ```
 
-سامانه روی آدرس `http://localhost:3000` و استودیو مدیریت دیتابیس روی `http://localhost:54323` در دسترس خواهند بود.
+- **Application Web UI:** [http://localhost:3000](http://localhost:3000)
+- **Supabase Local Studio:** [http://localhost:54323](http://localhost:54323)
+- **Local API Gateway:** [http://127.0.0.1:54321](http://127.0.0.1:54321)
 
 ---
 
-## 👥 حساب‌های کاربری دمو (Demo Accounts)
+## 👥 Demo User Accounts (Pre-Seeded)
 
-در صفحه لاگین (`/login`) دکمه‌های **ورود سریع تک‌کلیکی (One-Click Role Switcher)** برای تست آسان تمام نقش‌ها تعبیه شده است:
+The login page (`/login`) includes a **One-Click Role Switcher** for instant testing across all operational roles:
 
-| نقش | نام پرسنل | ایمیل | شعبه / مستأجر | رمز عبور |
+| Role | Staff Name | Email | Tenant / Branch | Password |
 | :--- | :--- | :--- | :--- | :--- |
-| **گارسون ۱** | امیرحسین رضایی | `amir@roohi.ir` | کافه رستوران روحی (باغ فردوس) | `Password123!` |
-| **گارسون ۲** | نیما علوی | `nima@roohi.ir` | کافه رستوران روحی (باغ فردوس) | `Password123!` |
-| **سرآشپز (KDS)** | استاد حسن | `hassan@roohi.ir` | کافه رستوران روحی (باغ فردوس) | `Password123!` |
-| **صندوق‌دار** | سارا کاظمی | `sara@roohi.ir` | کافه رستوران روحی (باغ فردوس) | `Password123!` |
-| **مدیر کل** | رضا محمدی | `reza@roohi.ir` | کافه رستوران روحی (باغ فردوس) | `Password123!` |
-| **مدیر مستأجر ۲** | فرهاد رحیمی | `farhad@hizom.ir` | برگر زغالی هیزم (شعبه ونک) | `Password123!` |
+| **Waiter 1** | Amirhossein Rezaei | `amir@roohi.ir` | Roohi Café Restaurant (Bagh-e Ferdows) | `Password123!` |
+| **Waiter 2** | Nima Alavi | `nima@roohi.ir` | Roohi Café Restaurant (Bagh-e Ferdows) | `Password123!` |
+| **Head Chef (KDS)** | Chef Hassan | `hassan@roohi.ir` | Roohi Café Restaurant (Bagh-e Ferdows) | `Password123!` |
+| **Cashier** | Sara Kazemi | `sara@roohi.ir` | Roohi Café Restaurant (Bagh-e Ferdows) | `Password123!` |
+| **General Manager** | Reza Mohammadi | `reza@roohi.ir` | Roohi Café Restaurant (Bagh-e Ferdows) | `Password123!` |
+| **Tenant 2 Manager** | Farhad Rahimi | `farhad@hizom.ir` | Hizom Charcoal Burgers (Vanak Branch) | `Password123!` |
 
-> **نکته ایزولاسیون چندمستأجری (Multi-Tenancy):** با ورود با حساب فرهاد رحیمی (برگر هیزم)، هیچ‌یک از میزها، سفارش‌ها یا منوی کافه روحی قابل مشاهده یا دستکاری نخواهد بود (تضمین‌شده در هسته Postgres RLS).
-
----
-
-## 🔒 ویژگی‌های ارشد مهندسی (Senior Architectural Highlights)
-
-1. **قفل پخت آشپزخانه (Cooking Lock Invariant):**
-   - هنگامی که آشپزخانه سفارش را از `pending` به `preparing` تغییر می‌دهد، گارسون دیگر اجازه لغو آن را ندارد (`rpc_cancel_order_item` خطای امنیتی پرتاب می‌کند). لغو غذای در حال پخت صرفاً با دسترسی مدیر شیفت ممکن است تا از دورریز گوشت و مواد جلوگیری شود.
-2. **محاسبه قانونی ارزش افزوده ۱۰٪ (مصوب ۱۴۰۳):**
-   - محاسبه به صورت اتمیک در پایگاه داده انجام می‌شود:
-     $$\text{VAT} = \lfloor (\text{Subtotal} - \text{Discount}) \times 0.10 \rfloor$$
-     $$\text{Grand Total} = (\text{Subtotal} - \text{Discount}) + \text{VAT}$$
-3. **قیمت‌گذاری Zero-Trust و تاریخچه تغییرناپذیر:**
-   - هوش مصنوعی هرگز حق ارسال قیمت ندارد. قیمت واحد (`unit_price_toman`) در لحظه ثبت از منوی دیتابیس کپی و فریز می‌شود تا تورم و تغییرات آتی منو، فاکتورهای گذشته را تغییر ندهد.
-4. **صفحه نمایش همزمان (Split View):**
-   - مسیر `/demo-split` سالن و آشپزخانه را در دو پنل کنار هم نمایش می‌دهد تا تغییرات زنده وب‌سوکت در لحظه قابل مشاهده باشد.
-5. **لاگین ساختاریافته ممیزی (Audit Logging):**
-   - تمامی وقایع با جزئیات در جدول `order_events` ثبت و ساختار JSON آن به خروجی کنسول/سرور ارسال می‌شود.
-6. **مدیریت پرسنل و عضویت سلف‌سرویس رستوران:**
-   - مسیر `/staff`: مدیران و مالکان هر رستوران می‌توانند پرسنل جدید استخدام کرده و برای آن‌ها نقش (گارسون، آشپز، صندوق‌دار) و شعبه مشخص کنند.
-   - مسیر `/register`: رستوران‌ها و کافه‌های جدید می‌توانند ثبت‌نام کنند؛ سامانه به صورت خودکار شعبه، میزها و منوی اولیه را آماده می‌کند.
+> **Multi-Tenant Isolation Notice:** Logging in as Farhad Rahimi (Hizom Burgers) guarantees that Roohi Café's tables, orders, staff, and menus are completely invisible and unmodifiable, enforced directly at the Postgres Row-Level Security (RLS) kernel layer.
 
 ---
 
-## 🧪 اجرای آزمون‌های خودکار (E2E Tests)
+## 🔒 Senior Architectural Highlights
 
-آزمون‌های Playwright رفتار چندمستأجری، چرخه کامل شیفت، استخدام پرسنل و ثبت‌نام رستوران را می‌سنجند:
+### 1. Kitchen Cooking Lock Invariant
+When the kitchen marks an item as `preparing` on the KDS, floor waiters are locked from cancelling it (`rpc_cancel_order_item` throws a permission exception). Cancellation of items already on the grill or stove requires shift-manager escalation, preventing meat waste, kitchen confusion, and food spoilage.
+
+### 2. Statutory Iranian 10% VAT Computation (1403 Budget Law)
+Deterministic integer arithmetic executed inside Postgres stored procedures:
+$$\text{VAT (10\%)} = \lfloor (\text{Subtotal} - \text{Discount}) \times 0.10 \rfloor$$
+$$\text{Grand Total} = (\text{Subtotal} - \text{Discount}) + \text{VAT}$$
+
+### 3. Zero-Trust Pricing & Historical Immutability
+The AI model and client frontend are **never** trusted with prices. Unit prices (`unit_price_toman`) are resolved server-side from the active database menu snapshot at the exact moment of order insertion and stored immutably on the order item row, ensuring future menu price adjustments never distort historical accounting records.
+
+### 4. Chef Master Board & KDS Multi-View
+The kitchen screen (`/kds`) features three operational perspectives:
+- **Chef Master View:** Real-time table board showing location, elapsed time with urgent alerts (>15 min), progress bars, and custom cooking notes.
+- **Kanban Pipeline:** 3-stage visual columns (`Pending` $\rightarrow$ `Preparing` $\rightarrow$ `Ready`).
+- **Batch Expeditor:** Cross-table aggregation for grill and bar stations (e.g., total skewers of kebab currently demanded).
+
+### 5. Professional Iranian Cashier POS (`/cashier`)
+- Styled in unified dark slate and warm saffron amber theme matching floor operations.
+- 80mm thermal receipt format with quick print preview (`window.print()`).
+- Payment method tabs:
+  - **SHEPAB / POS Card Reader:** With optional reference number for bank reconciliation.
+  - **Cash:** With instant change-due calculator.
+  - **Card-to-Card / Sheba.**
+  - **Split Bill (Dongi).**
+
+### 6. Role-Based Navigation & View Isolation (RBAC)
+TopBar dynamically adjusts based on the authenticated staff member's role:
+- **Waiter:** Only sees `Floor POS` (`/pos`).
+- **Kitchen:** Only sees `Kitchen Display` (`/kds`).
+- **Cashier:** Sees `Cashier & Checkout` (`/cashier`) and `Floor POS` (`/pos`).
+- **Manager & Owner:** Full visibility across all 5 modules including `Menu Management` (`/menu`) and `Staff Management` (`/staff`).
+
+---
+
+## 🧪 Automated Testing (Playwright E2E Suite)
+
+Resteroassist includes an end-to-end automated test suite verifying multi-tenant isolation, real-time shift workflows, and administrative features:
 
 ```bash
-# اجرای کل آزمون‌های Playwright
+# Run all end-to-end tests
 npm run test:e2e
 ```
 
-- `tests/rls-isolation.spec.ts`: اثبات عدم امکان خواندن یا نوشتن داده‌های مستأجر ب توسط مستأجر الف در سطح دیتابیس و رابط کاربری.
-- `tests/shift-workflow.spec.ts`: شبیه‌سازی کامل شیفت — ثبت سفارش گارسون، شروع پخت آشپزخانه، تست قفل پخت، آماده‌سازی، اعمال تخفیف، محاسبه ارزش افزوده ۱۰٪ و تسویه نهایی صندوق.
-- `tests/staff-and-registration.spec.ts`: استخدام پرسنل جدید توسط مدیر و ورود موفق پرسنل جدید + ثبت‌نام رستوران مستقل و ورود به داشبورد ایزوله.
-
+### Verified Test Specs:
+1. `tests/ai-scratchpad.spec.ts`: Multi-item note parsing, scoped quantities, custom notes, and unmatched word reporting.
+2. `tests/rls-isolation.spec.ts`: Kernel-level proof that Restaurant A staff cannot read, mutate, or inject items into Restaurant B data.
+3. `tests/shift-workflow.spec.ts`: Full lifecycle simulation — Waiter takes order $\rightarrow$ KDS cooking lock invariant check $\rightarrow$ Cashier applies discount, verifies 10% VAT, and seals invoice.
+4. `tests/staff-and-registration.spec.ts`: Manager hires new staff $\rightarrow$ newly recruited staff logs in successfully; new restaurant self-registration flow.
+5. Menu management test: Manager adds new dish, modifies Toman pricing, and toggles real-time availability.
 
 ---
 
-## 🚀 استقرار روی Vercel (Production Deployment)
+## 🚀 Production Deployment (Vercel + Supabase Cloud)
 
-1. ایجاد یک پروژه در [Supabase Cloud](https://supabase.com).
-2. اجرای مایگریشن و سید:
+1. Create a project on [Supabase Cloud](https://supabase.com).
+2. Push database schema, migrations, and seed data:
    ```bash
+   npx supabase link --project-ref your-supabase-project-id
    npx supabase db push
    ```
-3. ایمپورت مخزن در [Vercel](https://vercel.com) و تنظیم متغیرهای محیطی:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `OPENROUTER_API_KEY`
-   - `AI_MODEL=google/gemini-2.5-flash`
-   - `NEXT_PUBLIC_APP_URL`
+3. Import the repository into [Vercel](https://vercel.com) and configure the environment variables:
+   - `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase Cloud project URL.
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase Anon public key.
+   - `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase Service Role secret key.
+   - `OPENROUTER_API_KEY`: OpenRouter API key for Gemini 2.5 Flash (optional; offline engine active by default).
+   - `AI_MODEL`: `google/gemini-2.5-flash`
+   - `NEXT_PUBLIC_APP_URL`: Your production Vercel URL (e.g. `https://your-restaurant-app.vercel.app`).
 
+---
+
+## 📄 Documentation
+
+- [DECISIONS.md](file:///d:/Freelance%20project/resteroassist/DECISIONS.md): Architectural Decision Records (ADRs), trade-offs, and design rationale.
+- [HANDOVER.md](file:///d:/Freelance%20project/resteroassist/HANDOVER.md): Operations manual and shift manager handover guide.
+- [AI_USAGE.md](file:///d:/Freelance%20project/resteroassist/AI_USAGE.md): AI architecture, prompt defense-in-depth, and offline NLP fallback specifications.
+- [SECURITY_AUDIT_REPORT.md](file:///d:/Freelance%20project/resteroassist/SECURITY_AUDIT_REPORT.md): Red team security assessment, threat modeling, and invariant testing.
+
+---
+
+## ⚖️ License
+
+MIT License. Designed & built for Iranian hospitality operations.

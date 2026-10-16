@@ -178,6 +178,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@roohi.ir"
                 dir="ltr"
+                suppressHydrationWarning
                 className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3.5 text-sm text-slate-100 placeholder-slate-500 focus:border-brand-500 focus:outline-none"
               />
             </div>
@@ -192,6 +193,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 dir="ltr"
+                suppressHydrationWarning
                 className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3.5 text-sm text-slate-100 placeholder-slate-500 focus:border-brand-500 focus:outline-none"
               />
             </div>

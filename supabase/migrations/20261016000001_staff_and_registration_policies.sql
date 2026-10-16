@@ -30,3 +30,4 @@ WITH CHECK (
     restaurant_id = public.current_restaurant_id()
     AND public.current_user_role() IN ('manager', 'owner')
 );
+

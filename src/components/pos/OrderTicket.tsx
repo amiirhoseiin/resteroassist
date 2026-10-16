@@ -7,8 +7,15 @@ import {
   Loader2,
   Trash2,
   UtensilsCrossed,
+  Edit2,
+  Flame,
+  CheckCheck,
+  AlertTriangle,
+  Receipt,
+  Plus,
+  Minus
 } from "lucide-react";
-import { cancelOrderItem, updateItemStatus } from "@/actions/order-actions";
+import { cancelOrderItem, updateItemStatus, updateOrderItemDetails } from "@/actions/order-actions";
 import { useToast } from "@/components/ui/ToastProvider";
 import {
   cn,
@@ -53,9 +60,6 @@ interface OrderTicketProps {
   onChanged: () => void;
 }
 
-const KITCHEN_LOCK_MESSAGE =
-  "امکان حذف وجود ندارد؛ آشپزخانه پخت این آیتم را شروع کرده است.";
-
 export function OrderTicket({
   table,
   order,
@@ -66,10 +70,23 @@ export function OrderTicket({
   const { showToast } = useToast();
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
 
-  const subtotal = items
-    .filter((item) => item.status !== "cancelled")
-    .reduce((sum, item) => sum + item.quantity * item.unit_price_toman, 0);
+  // Edit Note Modal state
+  const [editingItem, setEditingItem] = useState<TicketItem | null>(null);
+  const [editNotesText, setEditNotesText] = useState("");
+  const [editQuantity, setEditQuantity] = useState(1);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
+  const activeItems = items.filter((item) => item.status !== "cancelled");
+  const subtotal = activeItems.reduce(
+    (sum, item) => sum + item.quantity * item.unit_price_toman,
+    0
+  );
+  const discount = order ? order.discount_toman : 0;
+  const taxableAmount = Math.max(0, subtotal - discount);
+  const vat10 = Math.round(taxableAmount * 0.10);
+  const finalTotal = taxableAmount + vat10;
+
+  // Cancel item
   const handleCancelItem = async (item: TicketItem) => {
     setBusyItemId(item.id);
     const res = await cancelOrderItem({
@@ -82,11 +99,12 @@ export function OrderTicket({
     if (!res.success) {
       showToast("error", translateServerError(res.error));
     } else {
-      showToast("success", "آیتم از فاکتور حذف شد.");
+      showToast("success", "آیتم از سفارش حذف شد.");
       onChanged();
     }
   };
 
+  // Serve item to table
   const handleServeItem = async (item: TicketItem) => {
     setBusyItemId(item.id);
     const res = await updateItemStatus({
@@ -104,144 +122,274 @@ export function OrderTicket({
     }
   };
 
+  // Quick quantity increment for pending item
+  const handleAdjustQuantity = async (item: TicketItem, delta: number) => {
+    const newQty = item.quantity + delta;
+    if (newQty <= 0) {
+      await handleCancelItem(item);
+      return;
+    }
+
+    setBusyItemId(item.id);
+    const res = await updateOrderItemDetails({
+      itemId: item.id,
+      quantity: newQty,
+      notes: item.notes,
+      expectedVersion: item.version,
+    });
+    setBusyItemId(null);
+
+    if (!res.success) {
+      showToast("error", translateServerError(res.error));
+    } else {
+      showToast("success", `تعداد به ${toPersianDigits(newQty)} تغییر یافت.`);
+      onChanged();
+    }
+  };
+
+  // Open Edit Modal
+  const openEditModal = (item: TicketItem) => {
+    setEditingItem(item);
+    setEditNotesText(item.notes || "");
+    setEditQuantity(item.quantity);
+  };
+
+  // Save Edit Modal
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem) return;
+    setIsSavingEdit(true);
+
+    const res = await updateOrderItemDetails({
+      itemId: editingItem.id,
+      quantity: editQuantity,
+      notes: editNotesText.trim() || null,
+      expectedVersion: editingItem.version,
+    });
+
+    setIsSavingEdit(false);
+
+    if (!res.success) {
+      showToast("error", translateServerError(res.error));
+    } else {
+      showToast("success", "تغییرات سفارش ثبت شد و آشپزخانه مطلع گردید.");
+      setEditingItem(null);
+      onChanged();
+    }
+  };
+
   const orderStatus = order ? ORDER_STATUS_MAP[order.status] || ORDER_STATUS_MAP.open : null;
 
   return (
     <aside className="min-w-0 lg:sticky lg:top-20">
-      <div className="flex h-[calc(100vh-5rem)] flex-col rounded-2xl border border-slate-200 bg-white shadow-sm">
-        {/* سربرگ فاکتور */}
-        <div className="rounded-t-2xl border-b border-slate-200 p-4">
+      <div className="flex h-[calc(100vh-6rem)] flex-col rounded-2xl border border-slate-800 bg-slate-900 shadow-xl overflow-hidden">
+        {/* Ticket Header */}
+        <div className="border-b border-slate-800 p-4 bg-slate-950/70 space-y-2">
           {table ? (
             <>
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-lg font-black text-slate-800">
-                  سفارش {table.table_number}
-                </h2>
+                <div className="flex items-center gap-2">
+                  <span className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                    <Receipt className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <h2 className="text-base font-black text-slate-100">
+                      سفارش {table.table_number}
+                    </h2>
+                    <span className="text-[11px] text-slate-400">
+                      ظرفیت: {toPersianDigits(table.capacity)} نفر
+                    </span>
+                  </div>
+                </div>
+
                 {order && (
-                  <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-500">
+                  <span className="rounded-full border border-slate-700 bg-slate-800 px-2.5 py-0.5 text-[10px] font-bold text-slate-300">
                     نسخه {toPersianDigits(order.version)}
                   </span>
                 )}
               </div>
-              <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                <span>ظرفیت: {toPersianDigits(table.capacity)} نفر</span>
-                {orderStatus && (
-                  <span className={cn("rounded-full border px-2.5 py-0.5 font-bold", orderStatus.badge)}>
+
+              {orderStatus && (
+                <div className="flex items-center justify-between pt-1 border-t border-slate-850">
+                  <span className="text-[11px] text-slate-400">وضعیت میز:</span>
+                  <span className={cn("rounded-full border px-2.5 py-0.5 text-[10px] font-bold", orderStatus.badge)}>
                     {orderStatus.label}
                   </span>
-                )}
-              </div>
+                </div>
+              )}
             </>
           ) : (
-            <h2 className="text-lg font-black text-slate-800">فاکتور جاری</h2>
+            <div className="flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-slate-400" />
+              <h2 className="text-base font-black text-slate-100">فاکتور جاری میز</h2>
+            </div>
           )}
         </div>
 
-        {/* فهرست آیتم‌های سفارش */}
-        <div className="flex-1 space-y-2 overflow-y-auto p-3">
+        {/* Order Items List */}
+        <div className="flex-1 space-y-2.5 overflow-y-auto p-3">
           {!table ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-slate-100">
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-slate-500">
+              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-slate-800/80 border border-slate-750">
                 <ClipboardList className="h-7 w-7 text-slate-400" />
               </span>
-              <p className="text-sm leading-6 text-slate-500">
-                برای مشاهده و ثبت سفارش، یکی از میزهای سالن را انتخاب کنید.
+              <p className="text-xs leading-5">
+                برای مشاهده، ثبت اقلام یا ادیت سفارش، یکی از میزهای سالن را انتخاب کنید.
               </p>
             </div>
-          ) : items.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-slate-100">
-                <UtensilsCrossed className="h-7 w-7 text-slate-400" />
+          ) : activeItems.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-slate-500">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-slate-800/60 border border-slate-750">
+                <UtensilsCrossed className="h-6 w-6 text-slate-400" />
               </span>
-              <p className="text-sm leading-6 text-slate-500">
-                هنوز آیتمی برای این میز ثبت نشده است؛ از منوی رستوران یا دستیار
-                هوشمند اضافه کنید.
+              <p className="text-xs">
+                هنوز غذایی برای این میز ثبت نشده است. از منو یا دستیار صوتی هوش مصنوعی آیتم‌ها را اضافه کنید.
               </p>
             </div>
           ) : (
-            items.map((item) => {
-              const statusInfo = ITEM_STATUS_MAP[item.status] || {
-                label: item.status,
-                badge: "bg-slate-100 text-slate-500 border-slate-200",
-              };
-              const isCancelled = item.status === "cancelled";
-              const canCancel = item.status === "pending";
+            activeItems.map((item) => {
+              const itemName =
+                menuItemMap[item.menu_item_id]?.name || "آیتم منو";
               const isBusy = busyItemId === item.id;
+              const isPending = item.status === "pending";
+              const isPreparing = item.status === "preparing";
+              const isReady = item.status === "ready";
+              const isServed = item.status === "served";
 
               return (
                 <div
                   key={item.id}
-                  className={cn(
-                    "rounded-xl border border-slate-200 p-3 transition-opacity",
-                    isCancelled && "opacity-50"
-                  )}
+                  className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 space-y-2 hover:border-slate-750 transition-all"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 space-y-1.5">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="grid h-6 min-w-6 place-items-center rounded-md bg-slate-900 px-1.5 text-[11px] font-bold text-white">
-                          {toPersianDigits(item.quantity)}×
-                        </span>
-                        <span className="text-sm font-bold text-slate-800">
-                          {menuItemMap[item.menu_item_id]?.name || "آیتم منو"}
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-slate-100">
+                          {itemName}
                         </span>
                       </div>
-                      {item.notes && (
-                        <div className="inline-block rounded-md border border-amber-200 bg-amber-100/80 px-2 py-0.5 text-[11px] text-amber-700">
-                          یادداشت: {item.notes}
-                        </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {toPersianDigits(item.quantity)} × {formatToman(item.unit_price_toman)} ={" "}
+                        <strong className="text-amber-400">
+                          {formatToman(item.quantity * item.unit_price_toman)}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {/* Status Badge */}
+                    <div>
+                      {isPending && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold">
+                          در صف پخت
+                        </span>
+                      )}
+                      {isPreparing && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold flex items-center gap-1">
+                          <Flame className="w-3 h-3 text-amber-400" />
+                          <span>روی اجاق</span>
+                        </span>
+                      )}
+                      {isReady && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
+                          آماده سرو 🍽️
+                        </span>
+                      )}
+                      {isServed && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700">
+                          تحویل شد ✓
+                        </span>
                       )}
                     </div>
-                    <span
-                      className={cn(
-                        "whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold",
-                        statusInfo.badge
-                      )}
-                    >
-                      {statusInfo.label}
-                    </span>
                   </div>
 
-                  <div className="mt-2.5 flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-slate-600">
-                      {formatToman(item.quantity * item.unit_price_toman)}
-                    </span>
+                  {/* Customer notes */}
+                  {item.notes && (
+                    <div className="text-[11px] p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3 flex-shrink-0 text-amber-400" />
+                      <span>{item.notes}</span>
+                    </div>
+                  )}
 
-                    <div className="flex items-center gap-1.5">
-                      {item.status === "ready" && (
-                        <button
-                          type="button"
-                          onClick={() => handleServeItem(item)}
-                          disabled={isBusy}
-                          className="flex h-11 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-[11px] font-bold text-white transition-colors hover:bg-emerald-500 disabled:opacity-50"
-                        >
-                          {isBusy ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <CheckCircle2 className="h-4 w-4" />
-                          )}
-                          <span>تحویل به میز شد</span>
-                        </button>
-                      )}
+                  {/* Waiter Actions for this item */}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-850 text-xs">
+                    {/* For pending items: full editing (+, -, notes, delete) */}
+                    {isPending ? (
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleAdjustQuantity(item, -1)}
+                            disabled={isBusy}
+                            title="کاهش تعداد"
+                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="px-1.5 font-bold text-slate-200 text-xs">
+                            {toPersianDigits(item.quantity)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleAdjustQuantity(item, 1)}
+                            disabled={isBusy}
+                            title="افزایش تعداد"
+                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
 
-                      {!isCancelled && item.status !== "served" && (
-                        <span title={canCancel ? "حذف این آیتم از فاکتور" : KITCHEN_LOCK_MESSAGE}>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(item)}
+                            disabled={isBusy}
+                            title="ویرایش یادداشت و مشخصات"
+                            className="p-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-amber-300 border border-slate-800"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => handleCancelItem(item)}
-                            disabled={!canCancel || isBusy}
-                            className="flex h-11 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-[11px] font-bold text-rose-600 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            disabled={isBusy}
+                            title="لغو این قلم"
+                            className="p-1.5 rounded-lg bg-slate-850 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 border border-slate-800"
                           >
                             {isBusy ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <Loader2 className="w-3 h-3 animate-spin" />
                             ) : (
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="w-3 h-3" />
                             )}
-                            <span>حذف آیتم</span>
                           </button>
-                        </span>
-                      )}
-                    </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* For preparing items: Cooking Lock info */}
+                    {isPreparing && (
+                      <div className="text-[11px] text-amber-400/90 flex items-center justify-between w-full">
+                        <span>آشپزخانه در حال پخت است (قفل آشپزخانه فعال)</span>
+                      </div>
+                    )}
+
+                    {/* For ready items: 1-Tap Served button */}
+                    {isReady && (
+                      <button
+                        type="button"
+                        onClick={() => handleServeItem(item)}
+                        disabled={isBusy}
+                        className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        {isBusy ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CheckCheck className="w-3.5 h-3.5" />
+                        )}
+                        <span>تحویل غذا به میز انجام شد</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -249,19 +397,112 @@ export function OrderTicket({
           )}
         </div>
 
-        {/* جمع فاکتور */}
-        {table && order && (
-          <div className="space-y-2 rounded-b-2xl border-t border-slate-200 bg-slate-50/70 p-4">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500">جمع کل اقلام</span>
-              <span className="font-black text-slate-800">{formatToman(subtotal)}</span>
+        {/* Financial Summary & VAT 10% */}
+        {table && activeItems.length > 0 && (
+          <div className="border-t border-slate-800 bg-slate-950/90 p-4 space-y-2 text-xs">
+            <div className="flex items-center justify-between text-slate-400">
+              <span>جمع اقلام منو:</span>
+              <span className="font-bold text-slate-200">{formatToman(subtotal)}</span>
             </div>
-            <p className="text-[11px] leading-5 text-slate-400">
-              اعمال تخفیف، مالیات و تسویهٔ نهایی توسط صندوق‌دار انجام می‌شود.
-            </p>
+
+            {discount > 0 && (
+              <div className="flex items-center justify-between text-rose-400">
+                <span>تخفیف فاکتور:</span>
+                <span className="font-bold">-{formatToman(discount)}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between text-slate-400">
+              <span>مالیات بر ارزش افزوده (۱۰٪):</span>
+              <span className="font-bold text-slate-200">{formatToman(vat10)}</span>
+            </div>
+
+            <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-sm font-black">
+              <span className="text-slate-100">مبلغ کل قابل پرداخت:</span>
+              <span className="text-amber-400 text-base">{formatToman(finalTotal)}</span>
+            </div>
           </div>
         )}
       </div>
+
+      {/* Edit Item Modal */}
+      {editingItem && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-black text-sm text-slate-100 flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-amber-400" />
+                <span>ویرایش آیتم در سفارش</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingItem(null)}
+                className="text-slate-400 hover:text-white text-xs p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  تعداد سفارش
+                </label>
+                <div className="flex items-center justify-between rounded-xl bg-slate-950 border border-slate-800 p-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setEditQuantity((q) => Math.max(1, q - 1))}
+                    className="p-2 rounded-lg bg-slate-800 text-slate-300"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <span className="text-lg font-black text-slate-100">
+                    {toPersianDigits(editQuantity)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setEditQuantity((q) => q + 1)}
+                    className="p-2 rounded-lg bg-slate-800 text-slate-300"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  یادداشت آشپزخانه
+                </label>
+                <textarea
+                  value={editNotesText}
+                  onChange={(e) => setEditNotesText(e.target.value)}
+                  placeholder="مثال: بدون پیاز، سس اضافه..."
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 focus:outline-none focus:border-amber-500 resize-none"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 text-xs font-medium"
+                >
+                  انصراف
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isSavingEdit && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>ثبت تغییرات</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

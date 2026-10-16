@@ -14,6 +14,13 @@ const AddItemSchema = z.object({
   notes: z.string().max(250).optional().nullable(),
 });
 
+const UpdateItemDetailsSchema = z.object({
+  itemId: z.string().uuid(),
+  quantity: z.number().int().min(1).max(50),
+  notes: z.string().max(250).optional().nullable(),
+  expectedVersion: z.number().int().min(1),
+});
+
 const UpdateStatusSchema = z.object({
   itemId: z.string().uuid(),
   newStatus: z.enum(["pending", "preparing", "ready", "served", "cancelled"]),
@@ -407,4 +414,107 @@ export async function parseVoiceNoteAction(orderId: string, noteText: string) {
     };
   }
 }
+
+/**
+ * Update quantity and notes for an existing pending order item
+ */
+export async function updateOrderItemDetails(input: z.infer<typeof UpdateItemDetailsSchema>) {
+  const startTime = Date.now();
+  const validated = UpdateItemDetailsSchema.safeParse(input);
+
+  if (!validated.success) {
+    return { success: false, error: "داده‌های ویرایش آیتم نامعتبر است." };
+  }
+
+  const supabase = await createClient();
+
+  try {
+    const { data: userResp } = await supabase.auth.getUser();
+    const actorId = userResp?.user?.id;
+    const userRole = userResp?.user?.app_metadata?.role;
+    const restaurantId = userResp?.user?.app_metadata?.restaurant_id;
+
+    if (!userRole || !["waiter", "cashier", "manager", "owner"].includes(userRole)) {
+      return { success: false, error: "دسترسی غیرمجاز برای ویرایش سفارش" };
+    }
+
+    // Fetch existing item
+    const { data: item, error: fetchErr } = await supabase
+      .from("order_items")
+      .select("id, order_id, restaurant_id, status, version")
+      .eq("id", validated.data.itemId)
+      .eq("restaurant_id", restaurantId)
+      .single();
+
+    if (fetchErr || !item) {
+      return { success: false, error: "آیتم مورد نظر یافت نشد." };
+    }
+
+    // Check version for optimistic locking
+    if (item.version !== validated.data.expectedVersion) {
+      return {
+        success: false,
+        error: "این آیتم همزمان توسط همکار دیگری تغییر یافته است؛ لطفاً صفحه را بروزرسانی کنید.",
+      };
+    }
+
+    // Check status: only pending items can be edited
+    if (item.status !== "pending") {
+      return {
+        success: false,
+        error: "امکان تغییر وجود ندارد؛ آشپزخانه پخت این آیتم را آغاز کرده یا آماده شده است.",
+      };
+    }
+
+    // Update item
+    const { data: updatedItem, error: updateErr } = await supabase
+      .from("order_items")
+      .update({
+        quantity: validated.data.quantity,
+        notes: validated.data.notes || null,
+        version: item.version + 1,
+      })
+      .eq("id", validated.data.itemId)
+      .eq("version", item.version)
+      .select()
+      .single();
+
+    if (updateErr || !updatedItem) {
+      return { success: false, error: "خطا در بروزرسانی اطلاعات آیتم: " + updateErr?.message };
+    }
+
+    // Record audit event in order_events for Kitchen Realtime Notification
+    await supabase.from("order_events").insert({
+      restaurant_id: restaurantId,
+      order_id: item.order_id,
+      actor_id: actorId,
+      event_type: "item_edited",
+      payload: {
+        item_id: item.id,
+        new_quantity: validated.data.quantity,
+        new_notes: validated.data.notes,
+      },
+    });
+
+    logAuditEvent({
+      restaurant_id: restaurantId,
+      actor_id: actorId,
+      order_id: item.order_id,
+      action: "order_item_edited",
+      latency_ms: Date.now() - startTime,
+      metadata: { itemId: item.id, quantity: validated.data.quantity },
+    });
+
+    revalidatePath("/pos");
+    revalidatePath("/kds");
+    revalidatePath("/cashier");
+    return { success: true, item: updatedItem };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "خطای غیرمنتظره در ویرایش آیتم",
+    };
+  }
+}
+
 
