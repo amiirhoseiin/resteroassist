@@ -17,10 +17,10 @@ test.describe("Full Live Shift Operations: Waiter -> KDS -> Cashier Loop", () =>
 
     // Open Table 4 Order Drawer
     await page.getByText("میز ۴").click();
-    await expect(page.getByText("سفارش میز ۴")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "سفارش میز ۴" })).toBeVisible();
 
     // Verify AI Scratchpad is ready
-    await expect(page.getByText("دفترچه یادداشت هوشمند گارسون")).toBeVisible();
+    await expect(page.getByText("ثبت سریع سفارش با هوش مصنوعی")).toBeVisible();
 
     // -------------------------------------------------------------
     // PHASE 2: Cooking Lock Invariant Test (DB Kernel & RPC)
@@ -86,8 +86,8 @@ test.describe("Full Live Shift Operations: Waiter -> KDS -> Cashier Loop", () =>
 
 
     // Verify Cashier UI elements
-    await expect(page.getByText("ایستگاه صندوق‌داری و تسویه حساب مالی")).toBeVisible();
-    await expect(page.getByText("محاسبه مالیات بر ارزش افزوده ۱۰٪")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "صندوق و تسویه" })).toBeVisible();
+    await expect(page.getByText("مالیات بر ارزش افزوده (۱۰٪)")).toBeVisible();
 
     // Verify Table 12 is in settling queue (from seed data)
     await expect(page.getByText("میز ۱۲").first()).toBeVisible();

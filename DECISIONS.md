@@ -78,3 +78,13 @@
   $$\text{VAT (10\%)} = \lfloor (\text{Subtotal} - \text{Discount}) \times 0.10 \rfloor$$
   $$\text{Grand Total} = (\text{Subtotal} - \text{Discount}) + \text{VAT}$$
 - **Trade-off:** Eliminates rounding discrepancies between client and server, guaranteeing audit-ready invoices.
+
+
+---
+
+## Decision 010: Restaurant Self-Registration & In-Tenant Staff Hiring
+- **Context:** Restaurant managers need to recruit new staff (waiters, kitchen staff, cashiers, shift managers) without contacting support. Additionally, new restaurants and cafes need a self-service onboarding flow to register their brand and immediately start operations.
+- **Decision:** 
+  1. **Staff Hiring (`/staff` & `hireStaffMemberAction`):** Restricted to `manager` and `owner` roles. Uses Supabase Auth Admin API (`createAdminClient`) to generate auth credentials and links them directly to the calling manager's `restaurant_id` and chosen branch. RLS policies on `staff_profiles` enforce that managers can only view and recruit staff within their own tenant boundary.
+  2. **Restaurant Registration (`/register` & `registerRestaurantAction`):** A public onboarding route that creates the `restaurants` row, default branch, owner account (`owner`), and automatically seeds 4 initial dining tables (میز ۱ تا ۴) and starter menu categories, allowing instant live operation upon signup.
+- **Trade-off:** Requires Supabase service role access within server actions, but ensures strict defense-in-depth where user-provided inputs cannot override server-extracted JWT `restaurant_id` claims.

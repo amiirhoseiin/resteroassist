@@ -30,3 +30,4 @@ export function logAuditEvent(entry: AuditLogEntry): void {
     console.log(`[AUDIT_LOG] ${JSON.stringify(payload)}`);
   }
 }
+

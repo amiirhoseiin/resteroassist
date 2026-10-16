@@ -1,239 +1,235 @@
 "use client";
 
 import { useState } from "react";
-import { Mic, Sparkles, Send, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
-import { parseVoiceNoteAction, addItemToOrder } from "@/actions/order-actions";
+import { Loader2, Send, Sparkles, X } from "lucide-react";
+import { addItemToOrder, parseVoiceNoteAction } from "@/actions/order-actions";
+import { useToast } from "@/components/ui/ToastProvider";
+import { formatToman, toPersianDigits, translateServerError } from "@/lib/utils";
 import type { ParsedOrderItem } from "@/lib/ai-parser";
 
 interface AiScratchpadProps {
-  orderId: string;
+  orderId: string | null;
+  tableNumber: string | null;
   menuItemMap: Record<string, { name: string; price_toman: number }>;
   onItemsAdded: () => void;
 }
 
 const SAMPLE_PROMPTS = [
-  "۲ تا کباب لقمه زعفرانی با کره اضافه و ۲ تا دوغ محلی",
-  "یه ته‌چین مرغ و بادمجان بدون بادمجان برای حساسیت",
+  "دو تا کباب لقمه با کره اضافه و یه دوغ بدون نعنا",
+  "یه ته‌چین مرغ بدون بادمجان برای حساسیت",
   "۳ تا چای و باقلوای قزوین تازه‌دم",
-  "یک قیمه نثار با خلال پسته فراوان و یه شربت بیدمشک",
 ];
 
-export function AiScratchpad({ orderId, menuItemMap, onItemsAdded }: AiScratchpadProps) {
+export function AiScratchpad({
+  orderId,
+  tableNumber,
+  menuItemMap,
+  onItemsAdded,
+}: AiScratchpadProps) {
+  const { showToast } = useToast();
   const [noteText, setNoteText] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [parsedItems, setParsedItems] = useState<ParsedOrderItem[] | null>(null);
   const [sourceUsed, setSourceUsed] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{ type: "success" | "error" | "info"; msg: string } | null>(null);
   const [isAdding, setIsAdding] = useState(false);
 
   const handleParse = async () => {
+    if (!orderId) {
+      showToast("warning", "برای ثبت سریع سفارش، ابتدا یک میز را از فهرست بالا انتخاب کنید.");
+      return;
+    }
     if (!noteText.trim()) return;
-    setIsProcessing(true);
-    setFeedback(null);
-    setParsedItems(null);
 
+    setIsProcessing(true);
     try {
       const res = await parseVoiceNoteAction(orderId, noteText);
+
       if (res.success && res.data && res.data.items.length > 0) {
         setParsedItems(res.data.items);
-        setSourceUsed(res.source);
+        setSourceUsed(res.source ?? null);
         if (res.source === "heuristic") {
-          setFeedback({
-            type: "info",
-            msg: "پردازش با موتور محلی پشتیبان فارسی انجام شد (پایدار در شرایط عدم دسترسی اینترنت بین‌الملل).",
-          });
+          showToast("info", "پردازش نقشهٔ سفارش با موتور محلی پشتیبان انجام شد.");
         }
       } else {
-
-        setFeedback({
-          type: "error",
-          msg: res.error || "آیتمی از متن تشخیص داده نشد. لطفاً از منو دستی انتخاب کنید.",
-        });
+        showToast(
+          "error",
+          "دستیار هوشمند موقتاً در دسترس نیست. لطفاً آیتم‌ها را از منوی دستی انتخاب کنید."
+        );
       }
-    } catch (err: unknown) {
-      setFeedback({
-        type: "error",
-        msg: err instanceof Error ? err.message : "خطا در برقراری ارتباط با دستیار صوتی",
-      });
+    } catch {
+      showToast(
+        "error",
+        "دستیار هوشمند موقتاً در دسترس نیست. لطفاً آیتم‌ها را از منوی دستی انتخاب کنید."
+      );
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleConfirmAndAdd = async () => {
-    if (!parsedItems || parsedItems.length === 0) return;
+  const handleConfirm = async () => {
+    if (!parsedItems || parsedItems.length === 0 || !orderId) return;
     setIsAdding(true);
 
-    try {
-      for (const item of parsedItems) {
-        await addItemToOrder({
-          orderId,
-          menuItemId: item.menu_item_id,
-          quantity: item.quantity,
-          notes: item.notes,
-        });
-      }
-
-      setFeedback({
-        type: "success",
-        msg: "همه آیتم‌های یادداشت هوشمند با موفقیت به سفارش افزوده شدند.",
+    let hasError = false;
+    for (const item of parsedItems) {
+      const res = await addItemToOrder({
+        orderId,
+        menuItemId: item.menu_item_id,
+        quantity: item.quantity,
+        notes: item.notes ?? null,
       });
+      if (!res.success) {
+        hasError = true;
+        showToast("error", translateServerError(res.error));
+        break;
+      }
+    }
+
+    setIsAdding(false);
+
+    if (!hasError) {
+      showToast("success", "آیتم‌های شناسایی‌شده در سفارش میز ثبت شدند.");
       setParsedItems(null);
       setNoteText("");
       onItemsAdded();
-    } catch (err: unknown) {
-      setFeedback({
-        type: "error",
-        msg: err instanceof Error ? err.message : "خطا در افزودن برخی آیتم‌ها",
-      });
-    } finally {
-      setIsAdding(false);
     }
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-      {/* Title */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-brand-500/10 text-brand-400">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <span className="text-sm font-bold text-slate-200">
-            دفترچه یادداشت هوشمند گارسون (هوش مصنوعی فارسی)
+    <>
+      <section className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-4 mb-6">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 font-bold text-slate-800">
+            <Sparkles className="h-5 w-5 text-indigo-500" />
+            <span>ثبت سریع سفارش با هوش مصنوعی</span>
+          </h2>
+          <span className="text-[11px] font-medium text-indigo-500/90">
+            {tableNumber
+              ? `مقصد ثبت: ${tableNumber}`
+              : "برای شروع، ابتدا یک میز را انتخاب کنید"}
           </span>
         </div>
-        <span className="text-[11px] text-slate-500">
-          حداکثر ۳۰۰ کاراکتر • قیمت‌گذاری Zero-Trust از دیتابیس
-        </span>
-      </div>
 
-      {/* Persian Input Box */}
-      <div className="relative">
         <textarea
           value={noteText}
           maxLength={300}
           onChange={(e) => setNoteText(e.target.value)}
-          placeholder="متن عامیانه یا صوت دیکته شده گارسون را اینجا بنویسید (مثال: ۲ تا لاته یکی کم‌شیر با یه چیزکیک)..."
-          className="w-full h-20 p-3 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500 transition-colors resize-none"
+          placeholder="مثلاً بنویسید: دو تا کباب لقمه، یه دوغ بدون نعنا و یه ته‌چین برای میز ۴..."
+          className="h-24 w-full resize-none rounded-xl border border-indigo-200 bg-white p-3.5 text-sm text-slate-800 placeholder-slate-400 transition-colors focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200"
         />
-        <div className="absolute left-2.5 bottom-2.5 flex items-center gap-1.5 text-xs">
-          <span className="text-[10px] text-slate-500">{noteText.length}/300</span>
-          <button
-            type="button"
-            disabled={isProcessing || !noteText.trim()}
-            onClick={handleParse}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-medium text-xs shadow-md shadow-brand-500/20 disabled:opacity-50 transition-all"
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>در حال تبدیل...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>استخراج ساختار یافته</span>
-              </>
-            )}
-          </button>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+            <span className="text-slate-500">نمونه:</span>
+            {SAMPLE_PROMPTS.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => setNoteText(prompt)}
+                className="min-h-9 rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-slate-500 transition-colors hover:bg-indigo-100 hover:text-indigo-700"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <span className="text-[11px] text-slate-400">
+              {toPersianDigits(noteText.length)} از ۳۰۰
+            </span>
+            <button
+              type="button"
+              disabled={isProcessing || !noteText.trim() || !orderId}
+              onClick={handleParse}
+              className="flex h-11 items-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white shadow-md shadow-indigo-600/20 transition-all hover:bg-indigo-500 disabled:opacity-50"
+            >
+              {isProcessing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              <span>{isProcessing ? "در حال تبدیل..." : "تبدیل به آیتم‌های منو"}</span>
+            </button>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Sample Quick Chips */}
-      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-        <span className="text-slate-500">پیش‌نمونه‌های تست:</span>
-        {SAMPLE_PROMPTS.map((prompt, idx) => (
-          <button
-            key={idx}
-            type="button"
-            onClick={() => setNoteText(prompt)}
-            className="px-2.5 py-1 rounded-full bg-slate-800 hover:bg-slate-750 text-slate-300 border border-slate-700/60 transition-colors"
-          >
-            {prompt}
-          </button>
-        ))}
-      </div>
-
-      {/* Feedback Alert */}
-      {feedback && (
-        <div
-          className={`p-2.5 rounded-xl text-xs flex items-center gap-2 ${
-            feedback.type === "error"
-              ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
-              : feedback.type === "success"
-              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-              : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
-          }`}
-        >
-          {feedback.type === "error" ? (
-            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          ) : (
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-          )}
-          <span>{feedback.msg}</span>
-        </div>
-      )}
-
-      {/* Parsed Items Preview */}
+      {/* پنجرهٔ پیش‌نمایش آیتم‌های شناسایی‌شده */}
       {parsedItems && parsedItems.length > 0 && (
-        <div className="bg-slate-950/80 border border-brand-500/30 rounded-xl p-3.5 space-y-3">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-brand-400 flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              آیتم‌های استخراج شده ({parsedItems.length} ردیف)
-            </span>
-            <span className="text-[10px] text-slate-400">
-              منبع پردازش: {sourceUsed === "openrouter" ? "OpenRouter (Gemini 2.5 Flash)" : "موتور محلی فال‌بک"}
-            </span>
-          </div>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+              <h3 className="text-sm font-bold text-slate-800">
+                پیش‌نمایش آیتم‌های شناسایی‌شده (تأیید سالن‌دار)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setParsedItems(null)}
+                disabled={isAdding}
+                aria-label="بستن پیش‌نمایش"
+                className="grid h-11 w-11 place-items-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-          <div className="divide-y divide-slate-800/80">
-            {parsedItems.map((item, idx) => {
-              const menuInfo = menuItemMap[item.menu_item_id];
-              return (
-                <div key={idx} className="py-2 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="font-bold text-slate-200">
-                      {menuInfo?.name || "آیتم منو"}
-                    </span>
-                    <span className="mr-2 text-brand-400 font-medium">
-                      × {item.quantity} عدد
-                    </span>
-                    {item.notes && (
-                      <span className="mr-2 text-[11px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">
-                        یادداشت: {item.notes}
+            <div className="max-h-[45vh] space-y-3 overflow-y-auto p-5">
+              {parsedItems.map((item, index) => {
+                const menuInfo = menuItemMap[item.menu_item_id];
+                return (
+                  <div key={index} className="rounded-xl border border-slate-200 p-3.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-bold text-slate-800">
+                        {menuInfo?.name || "آیتم منو"}
                       </span>
+                      <span className="text-xs font-bold text-indigo-600">
+                        {toPersianDigits(item.quantity)} عدد
+                      </span>
+                    </div>
+                    {item.notes && (
+                      <div className="mt-2 inline-block rounded-md border border-amber-200 bg-amber-100/80 px-2 py-0.5 text-[11px] text-amber-700">
+                        یادداشت: {item.notes}
+                      </div>
                     )}
+                    <div className="mt-2 text-[11px] text-slate-400">
+                      قیمت واحد از منو: {formatToman(menuInfo?.price_toman ?? 0)}
+                    </div>
                   </div>
-                  <span className="text-slate-400">
-                    قیمت واحد امن: {(menuInfo?.price_toman || 0).toLocaleString("fa-IR")} تومان
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
 
-          <button
-            type="button"
-            disabled={isAdding}
-            onClick={handleConfirmAndAdd}
-            className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition-all"
-          >
-            {isAdding ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>در حال درج مستقل در پایگاه داده...</span>
-              </>
-            ) : (
-              <>
-                <Send className="w-3.5 h-3.5" />
-                <span>تایید نهایی و ثبت در سفارش میز</span>
-              </>
-            )}
-          </button>
+              <div className="text-[11px] text-slate-400">
+                منبع تحلیل:{" "}
+                {sourceUsed === "openrouter" ? "دستیار هوشمند ابری" : "موتور محلی پشتیبان"}
+              </div>
+            </div>
+
+            <div className="flex items-stretch gap-2.5 border-t border-slate-200 bg-slate-50/70 px-5 py-4">
+              <button
+                type="button"
+                disabled={isAdding}
+                onClick={handleConfirm}
+                className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white shadow-md shadow-emerald-600/20 transition-all hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {isAdding ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                <span>{isAdding ? "در حال ثبت..." : "تأیید و ثبت در سفارش میز"}</span>
+              </button>
+              <button
+                type="button"
+                disabled={isAdding}
+                onClick={() => setParsedItems(null)}
+                className="h-11 rounded-xl border border-slate-300 px-5 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-50"
+              >
+                انصراف
+              </button>
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

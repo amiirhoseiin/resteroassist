@@ -1,20 +1,28 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { updateItemStatus } from "@/actions/order-actions";
-import { 
-  ChefHat, 
-  Clock, 
-  Flame, 
-  CheckCircle2, 
-  AlertTriangle, 
-  RefreshCw, 
-  Check, 
-  Volume2, 
-  VolumeX 
+import { useToast } from "@/components/ui/ToastProvider";
+import {
+  CheckCircle2,
+  ChefHat,
+  Clock,
+  Flame,
+  Loader2,
+  RefreshCw,
+  User,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
-import { formatPersianTime, getElapsedMinutes, toPersianDigits } from "@/lib/utils";
+import {
+  cn,
+  getElapsedMinutes,
+  toPersianDigits,
+  translateServerError,
+} from "@/lib/utils";
+
+type KitchenStatus = "pending" | "preparing" | "ready";
 
 interface KdsItem {
   id: string;
@@ -26,387 +34,390 @@ interface KdsItem {
   status: "pending" | "preparing" | "ready" | "served" | "cancelled";
   version: number;
   created_at: string;
-  // Joined fields
+  // فیلدهای الحاقی
   menu_item_name?: string;
   table_number?: string;
+  waiter_name?: string;
 }
 
+interface KitchenTicket {
+  orderId: string;
+  tableNumber: string;
+  waiterName: string;
+  earliest: string;
+  items: KdsItem[];
+}
+
+const FILTERS: { key: "all" | KitchenStatus; label: string }[] = [
+  { key: "all", label: "همهٔ سفارش‌ها" },
+  { key: "pending", label: "در انتظار پخت" },
+  { key: "preparing", label: "در حال آماده‌سازی" },
+  { key: "ready", label: "آماده سرو" },
+];
+
 export default function KdsPage() {
+  const { showToast } = useToast();
   const [items, setItems] = useState<KdsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"all" | "pending" | "preparing" | "ready">("all");
+  const [activeFilter, setActiveFilter] = useState<"all" | KitchenStatus>("all");
+  const [busyItemId, setBusyItemId] = useState<string | null>(null);
 
   const fetchKdsItems = useCallback(async () => {
     const supabase = createClient();
 
-    // Query active items for kitchen display
-    const { data, error } = await supabase
-      .from("order_items")
-      .select(`
-        id,
-        order_id,
-        menu_item_id,
-        quantity,
-        unit_price_toman,
-        notes,
-        status,
-        version,
-        created_at,
-        menu_items (name),
-        orders (
-          dining_tables (table_number)
+    const [itemsRes, staffRes] = await Promise.all([
+      supabase
+        .from("order_items")
+        .select(
+          `
+          id,
+          order_id,
+          menu_item_id,
+          quantity,
+          unit_price_toman,
+          notes,
+          status,
+          version,
+          created_at,
+          menu_items (name),
+          orders ( created_by, dining_tables (table_number) )
+        `
         )
-      `)
-      .in("status", ["pending", "preparing", "ready"])
-      .order("created_at", { ascending: true });
+        .in("status", ["pending", "preparing", "ready"])
+        .order("created_at", { ascending: true }),
+      supabase.from("staff_profiles").select("id, full_name"),
+    ]);
 
-    if (data) {
-      const flattened: KdsItem[] = data.map((it: any) => ({
-        id: it.id,
-        order_id: it.order_id,
-        menu_item_id: it.menu_item_id,
-        quantity: it.quantity,
-        unit_price_toman: it.unit_price_toman,
-        notes: it.notes,
-        status: it.status,
-        version: it.version,
-        created_at: it.created_at,
-        menu_item_name: it.menu_items?.name || "غذای منو",
-        table_number: it.orders?.dining_tables?.table_number || "میز نامشخص",
+    const staffMap: Record<string, string> = {};
+    (staffRes.data || []).forEach((profile: { id: string; full_name: string }) => {
+      staffMap[profile.id] = profile.full_name;
+    });
+
+    if (itemsRes.data) {
+      const flattened: KdsItem[] = itemsRes.data.map((raw: any) => ({
+        id: raw.id,
+        order_id: raw.order_id,
+        menu_item_id: raw.menu_item_id,
+        quantity: raw.quantity,
+        unit_price_toman: raw.unit_price_toman,
+        notes: raw.notes,
+        status: raw.status,
+        version: raw.version,
+        created_at: raw.created_at,
+        menu_item_name: raw.menu_items?.name || "آیتم منو",
+        table_number: raw.orders?.dining_tables?.table_number || "میز نامشخص",
+        waiter_name: staffMap[raw.orders?.created_by] || "سالن‌دار شیفت",
       }));
       setItems(flattened);
     }
+
     setLoading(false);
   }, []);
 
   useEffect(() => {
     fetchKdsItems();
 
-    // Real-time subscription to order_items
+    // اشتراک زندهٔ مانیتور آشپزخانه
     const supabase = createClient();
     const channel = supabase
       .channel("kds_realtime_channel")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "order_items" },
-        (payload) => {
+        () => {
           fetchKdsItems();
-          // Optional sound / alert on new item
-          if (payload.eventType === "INSERT" && audioEnabled) {
-            try {
-              const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-              const osc = ctx.createOscillator();
-              const gain = ctx.createGain();
-              osc.connect(gain);
-              gain.connect(ctx.destination);
-              osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5 chime
-              gain.gain.setValueAtTime(0.15, ctx.currentTime);
-              osc.start();
-              osc.stop(ctx.currentTime + 0.35);
-            } catch {
-              // Audio context user gesture restrictions
-            }
-          }
         }
       )
       .subscribe();
 
-    // Refresh timers every 30 seconds
-    const intervalId = setInterval(() => {
-      setItems((prev) => [...prev]);
-    }, 30000);
-
     return () => {
       supabase.removeChannel(channel);
-      clearInterval(intervalId);
     };
-  }, [fetchKdsItems, audioEnabled]);
+  }, [fetchKdsItems]);
 
-  // Handle status update atomically via Postgres RPC
-  const handleStatusChange = async (
-    item: KdsItem,
-    nextStatus: "pending" | "preparing" | "ready" | "served"
-  ) => {
-    setActionError(null);
+  const handleManualRefresh = async () => {
+    setRefreshing(true);
+    await fetchKdsItems();
+    setRefreshing(false);
+  };
+
+  const handleStatusChange = async (item: KdsItem, newStatus: KitchenStatus) => {
+    setBusyItemId(item.id);
+
     const res = await updateItemStatus({
       itemId: item.id,
-      newStatus: nextStatus,
+      newStatus,
       expectedVersion: item.version,
     });
 
+    setBusyItemId(null);
+
     if (!res.success) {
-      setActionError(res.error || "خطای همزمانی در بروزرسانی وضعیت آشپزخانه");
-    } else {
+      showToast("error", translateServerError(res.error));
       await fetchKdsItems();
+      return;
     }
+
+    const label =
+      newStatus === "preparing"
+        ? "شروع پخت ثبت شد."
+        : "آیتم آمادهٔ تحویل به سالن شد.";
+    showToast("success", label);
+    await fetchKdsItems();
   };
 
-  const pendingItems = items.filter((it) => it.status === "pending");
-  const preparingItems = items.filter((it) => it.status === "preparing");
-  const readyItems = items.filter((it) => it.status === "ready");
+  const filteredItems = useMemo(
+    () =>
+      items.filter(
+        (item) => activeFilter === "all" || item.status === activeFilter
+      ),
+    [items, activeFilter]
+  );
 
-  const displayedItems =
-    activeTab === "pending"
-      ? pendingItems
-      : activeTab === "preparing"
-      ? preparingItems
-      : activeTab === "ready"
-      ? readyItems
-      : items;
+  const tickets = useMemo<KitchenTicket[]>(() => {
+    const byOrder = new Map<string, KitchenTicket>();
+
+    for (const item of filteredItems) {
+      const existing = byOrder.get(item.order_id);
+      if (existing) {
+        existing.items.push(item);
+        if (item.created_at < existing.earliest) existing.earliest = item.created_at;
+      } else {
+        byOrder.set(item.order_id, {
+          orderId: item.order_id,
+          tableNumber: item.table_number || "میز نامشخص",
+          waiterName: item.waiter_name || "سالن‌دار شیفت",
+          earliest: item.created_at,
+          items: [item],
+        });
+      }
+    }
+
+    return Array.from(byOrder.values()).sort((a, b) =>
+      a.earliest.localeCompare(b.earliest)
+    );
+  }, [filteredItems]);
+
+  const countFor = (status: "all" | KitchenStatus) =>
+    status === "all"
+      ? items.length
+      : items.filter((item) => item.status === status).length;
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="flex items-center gap-3 text-slate-400 text-sm">
-          <RefreshCw className="w-5 h-5 animate-spin text-brand-500" />
-          <span>در حال اتصال به مانیتور زنده آشپزخانه (KDS)...</span>
+      <div className="flex min-h-screen flex-1 items-center justify-center bg-slate-950 p-8">
+        <div className="flex items-center gap-3 text-sm text-slate-300">
+          <RefreshCw className="h-5 w-5 animate-spin text-amber-400" />
+          <span>در حال بارگذاری سفارش‌های آشپزخانه...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 p-4 lg:p-8 space-y-6">
-      {/* KDS Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-black text-slate-100 tracking-tight flex items-center gap-2">
-              <ChefHat className="w-6 h-6 text-brand-400" />
-              <span>نمایشگر زنده آشپزخانه (Kitchen Display System - KDS)</span>
+    <div className="min-h-screen flex-1 bg-slate-950 p-6 text-slate-100">
+      <div className="space-y-6">
+        {/* سربرگ مانیتور */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="flex items-center gap-2 text-xl font-black text-slate-100 sm:text-2xl">
+              <ChefHat className="h-6 w-6 text-amber-400" />
+              <span>مانیتور آشپزخانه</span>
             </h1>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30">
-              اتصال WebSocket آنلاین
-            </span>
+            <p className="mt-1 text-xs text-slate-400 sm:text-sm">
+              سفارش‌ها به صورت زنده روی این مانیتور ظاهر می‌شوند؛ با یک لمس وضعیت پخت را به‌روز کنید.
+            </p>
           </div>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            ردیابی زنده سفارش‌ها، قفل پخت هوشمند، تفکیک یادداشت‌های آشپزی و کنترل همزمانی
-          </p>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setAudioEnabled(!audioEnabled)}
-            className={`p-2 rounded-xl border text-xs transition-colors flex items-center gap-1.5 ${
-              audioEnabled
-                ? "bg-slate-900 border-slate-800 text-slate-300 hover:text-white"
-                : "bg-rose-500/10 border-rose-500/20 text-rose-400"
-            }`}
-          >
-            {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-            <span className="hidden sm:inline">{audioEnabled ? "صدای سفارش فعال" : "صدا قطع"}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={async () => {
-              setRefreshing(true);
-              await fetchKdsItems();
-              setRefreshing(false);
-            }}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-850 border border-slate-800 text-xs text-slate-300 transition-colors"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin text-brand-400" : ""}`} />
-            <span>تازه سازی</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Error / Concurrency Conflict Alert */}
-      {actionError && (
-        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-            <span>{actionError}</span>
+            <button
+              type="button"
+              onClick={() => setAudioEnabled((enabled) => !enabled)}
+              className={cn(
+                "flex h-11 items-center gap-2 rounded-xl border px-4 text-xs font-bold transition-colors",
+                audioEnabled
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                  : "border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-200"
+              )}
+            >
+              {audioEnabled ? (
+                <Volume2 className="h-4 w-4" />
+              ) : (
+                <VolumeX className="h-4 w-4" />
+              )}
+              <span>{audioEnabled ? "صدای هشدار: روشن" : "صدای هشدار: خاموش"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleManualRefresh}
+              className="flex h-11 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 text-xs font-bold text-slate-300 transition-colors hover:text-white"
+            >
+              <RefreshCw
+                className={cn("h-4 w-4", refreshing && "animate-spin text-amber-400")}
+              />
+              <span>بروزرسانی</span>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setActionError(null)}
-            className="text-xs text-slate-400 hover:text-white"
-          >
-            بستن
-          </button>
         </div>
-      )}
 
-      {/* Filter Tabs & Counters */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <button
-          type="button"
-          onClick={() => setActiveTab("all")}
-          className={`p-4 rounded-2xl border text-right transition-all ${
-            activeTab === "all"
-              ? "bg-slate-900 border-brand-500 shadow-lg"
-              : "bg-slate-900/60 border-slate-800 hover:border-slate-700"
-          }`}
-        >
-          <div className="text-xs text-slate-400">کل سفارش‌های فعال آشپزخانه</div>
-          <div className="text-2xl font-black text-slate-100 mt-1">
-            {toPersianDigits(items.length)} قلم
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("pending")}
-          className={`p-4 rounded-2xl border text-right transition-all ${
-            activeTab === "pending"
-              ? "bg-amber-500/10 border-amber-500 shadow-lg"
-              : "bg-slate-900/60 border-slate-800 hover:border-slate-700"
-          }`}
-        >
-          <div className="text-xs text-amber-400 font-semibold">در انتظار پخت (جدید)</div>
-          <div className="text-2xl font-black text-amber-400 mt-1">
-            {toPersianDigits(pendingItems.length)} قلم
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("preparing")}
-          className={`p-4 rounded-2xl border text-right transition-all ${
-            activeTab === "preparing"
-              ? "bg-blue-500/10 border-blue-500 shadow-lg"
-              : "bg-slate-900/60 border-slate-800 hover:border-slate-700"
-          }`}
-        >
-          <div className="text-xs text-blue-400 font-semibold">روی اجاق / در حال پخت</div>
-          <div className="text-2xl font-black text-blue-400 mt-1">
-            {toPersianDigits(preparingItems.length)} قلم
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab("ready")}
-          className={`p-4 rounded-2xl border text-right transition-all ${
-            activeTab === "ready"
-              ? "bg-emerald-500/10 border-emerald-500 shadow-lg"
-              : "bg-slate-900/60 border-slate-800 hover:border-slate-700"
-          }`}
-        >
-          <div className="text-xs text-emerald-400 font-semibold">آماده تحویل به سالن</div>
-          <div className="text-2xl font-black text-emerald-400 mt-1">
-            {toPersianDigits(readyItems.length)} قلم
-          </div>
-        </button>
-      </div>
-
-      {/* KDS Item Cards Grid */}
-      {displayedItems.length === 0 ? (
-        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
-          <ChefHat className="w-12 h-12 text-slate-600 mx-auto" />
-          <h3 className="font-bold text-slate-300 text-sm">هیچ آیتمی در این وضعیت وجود ندارد.</h3>
-          <p className="text-xs text-slate-500">
-            به محض ثبت سفارش توسط گارسون، آیتم‌ها بلافاصله روی این صفحه ظاهر می‌شوند.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {displayedItems.map((item) => {
-            const elapsed = getElapsedMinutes(item.created_at);
-            const isUrgent = elapsed >= 15;
-
+        {/* فیلترهای وضعیت */}
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          {FILTERS.map((filter) => {
+            const isActive = activeFilter === filter.key;
             return (
-              <div
-                key={item.id}
-                className={`rounded-2xl border p-4 space-y-3.5 flex flex-col justify-between transition-all ${
-                  item.status === "pending"
-                    ? "bg-amber-500/5 border-amber-500/30 hover:border-amber-500/60"
-                    : item.status === "preparing"
-                    ? "bg-blue-500/5 border-blue-500/30 hover:border-blue-500/60"
-                    : "bg-emerald-500/5 border-emerald-500/30 hover:border-emerald-500/60"
-                } ${isUrgent && item.status !== "ready" ? "glow-urgent" : ""}`}
+              <button
+                key={filter.key}
+                type="button"
+                onClick={() => setActiveFilter(filter.key)}
+                className={cn(
+                  "min-h-11 rounded-xl border px-4 py-2.5 text-start transition-all",
+                  isActive
+                    ? "border-amber-500/60 bg-amber-500/10"
+                    : "border-slate-800 bg-slate-900/60 hover:border-slate-600"
+                )}
               >
-                {/* Card Top: Table & Elapsed Timer */}
-                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-extrabold text-sm text-slate-100">
-                      {item.table_number}
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      v{toPersianDigits(item.version)}
-                    </span>
-                  </div>
-
-                  <div
-                    className={`flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${
-                      isUrgent
-                        ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-                        : "bg-slate-800 text-slate-400"
-                    }`}
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>{toPersianDigits(elapsed)} دقیقه قبل</span>
-                  </div>
-                </div>
-
-                {/* Item Name & Quantity */}
-                <div className="space-y-1.5">
-                  <div className="flex items-baseline justify-between">
-                    <h3 className="font-extrabold text-base text-slate-100">
-                      {item.menu_item_name}
-                    </h3>
-                    <span className="font-black text-lg text-brand-400 mr-2">
-                      × {toPersianDigits(item.quantity)}
-                    </span>
-                  </div>
-
-                  {/* Cooking / Preparation Notes Prominently Styled */}
-                  {item.notes ? (
-                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-start gap-1.5">
-                      <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                      <span>یادداشت مشتری: {item.notes}</span>
-                    </div>
-                  ) : (
-                    <div className="text-[11px] text-slate-500">بدون توضیح اضافه</div>
+                <span
+                  className={cn(
+                    "block text-xs font-bold",
+                    isActive ? "text-amber-300" : "text-slate-300"
                   )}
-                </div>
-
-                {/* Status Transition Action Buttons */}
-                <div className="pt-2">
-                  {item.status === "pending" && (
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(item, "preparing")}
-                      className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 transition-all"
-                    >
-                      <Flame className="w-4 h-4" />
-                      <span>شروع پخت (قفل لغو گارسون)</span>
-                    </button>
-                  )}
-
-                  {item.status === "preparing" && (
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(item, "ready")}
-                      className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-blue-600/20 transition-all"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>غذا پخته و آماده شد</span>
-                    </button>
-                  )}
-
-                  {item.status === "ready" && (
-                    <button
-                      type="button"
-                      onClick={() => handleStatusChange(item, "served")}
-                      className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition-all"
-                    >
-                      <Check className="w-4 h-4" />
-                      <span>تحویل به مهماندار سالن</span>
-                    </button>
-                  )}
-                </div>
-              </div>
+                >
+                  {filter.label}
+                </span>
+                <span className="mt-1 block text-xl font-black text-slate-100">
+                  {toPersianDigits(countFor(filter.key))}
+                </span>
+              </button>
             );
           })}
         </div>
-      )}
+
+        {/* کارت‌های سفارش آشپزخانه */}
+        {tickets.length === 0 ? (
+          <div className="grid place-items-center rounded-2xl border-2 border-dashed border-slate-800 bg-slate-900/40 p-16 text-center">
+            <div className="space-y-3">
+              <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-slate-800/80">
+                <ChefHat className="h-7 w-7 text-slate-500" />
+              </span>
+              <p className="text-sm text-slate-400">
+                در حال حاضر سفارشی در این وضعیت برای پخت وجود ندارد.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {tickets.map((ticket) => {
+              const elapsed = getElapsedMinutes(ticket.earliest);
+              const isUrgent = elapsed >= 15;
+              return (
+                <article
+                  key={ticket.orderId}
+                  className={cn(
+                    "overflow-hidden rounded-2xl border-2 border-slate-800 bg-slate-900",
+                    isUrgent && "glow-urgent border-rose-500/50"
+                  )}
+                >
+                  {/* سربرگ تیکت */}
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/40 p-4">
+                    <span className="text-2xl font-black text-slate-50">
+                      {ticket.tableNumber}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold",
+                          isUrgent
+                            ? "border-rose-500/40 bg-rose-500/15 text-rose-300"
+                            : "border-slate-700 bg-slate-800 text-slate-300"
+                        )}
+                      >
+                        <Clock className="h-3.5 w-3.5" />
+                        <span>{toPersianDigits(elapsed)} دقیقه پیش</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* بدنهٔ تیکت */}
+                  <div className="space-y-3 p-4">
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <User className="h-3.5 w-3.5" />
+                      <span>سالن‌دار: {ticket.waiterName}</span>
+                    </div>
+
+                    {ticket.items.map((item) => {
+                      const isBusy = busyItemId === item.id;
+                      return (
+                        <div
+                          key={item.id}
+                          className="space-y-2.5 rounded-xl border border-slate-800 bg-slate-950/40 p-3"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="grid h-7 min-w-7 place-items-center rounded-lg border border-amber-500/30 bg-amber-500/15 px-1.5 text-sm font-black text-amber-300">
+                              {toPersianDigits(item.quantity)}×
+                            </span>
+                            <span className="text-lg font-bold text-slate-100">
+                              {item.menu_item_name}
+                            </span>
+                          </div>
+
+                          {item.notes && (
+                            <div className="rounded-md border border-amber-500/30 bg-amber-500/20 px-2.5 py-1 text-sm text-amber-300">
+                              یادداشت: {item.notes}
+                            </div>
+                          )}
+
+                          {item.status === "pending" && (
+                            <button
+                              type="button"
+                              onClick={() => handleStatusChange(item, "preparing")}
+                              disabled={isBusy}
+                              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-amber-500 text-sm font-bold text-slate-950 shadow-md shadow-amber-500/20 transition-colors hover:bg-amber-400 disabled:opacity-50"
+                            >
+                              {isBusy ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Flame className="h-4 w-4" />
+                              )}
+                              <span>{isBusy ? "در حال ثبت..." : "شروع پخت"}</span>
+                            </button>
+                          )}
+
+                          {item.status === "preparing" && (
+                            <button
+                              type="button"
+                              onClick={() => handleStatusChange(item, "ready")}
+                              disabled={isBusy}
+                              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white shadow-md shadow-emerald-600/20 transition-colors hover:bg-emerald-500 disabled:opacity-50"
+                            >
+                              {isBusy ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-4 w-4" />
+                              )}
+                              <span>
+                                {isBusy ? "در حال ثبت..." : "آماده تحویل به سالن"}
+                              </span>
+                            </button>
+                          )}
+
+                          {item.status === "ready" && (
+                            <div className="grid h-11 w-full place-items-center rounded-xl border border-emerald-500/30 bg-emerald-500/15 text-sm font-bold text-emerald-300">
+                              آماده سرو ✓
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

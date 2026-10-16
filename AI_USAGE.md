@@ -63,3 +63,4 @@ Resteroassist introduces the **AI Smart Waiter Scratchpad**, allowing waiters to
   - Network & Model Generation: ~800ms – 1,400ms.
   - Zod Validation & DB Match: ~15ms.
   - Total Tableside Time Saved: ~30 to 45 seconds per table interaction compared to manual menu browsing.
+

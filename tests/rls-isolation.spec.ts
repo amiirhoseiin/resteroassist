@@ -101,3 +101,4 @@ test.describe("Multi-Tenant RLS Data Isolation Tests", () => {
     await expect(page.getByText("میز ۱۲")).not.toBeVisible();
   });
 });
+

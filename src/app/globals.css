@@ -57,3 +57,20 @@ body {
 .glow-urgent {
   animation: pulseGlow 2s infinite ease-in-out;
 }
+
+/* Toast entrance animation (bottom-start) */
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-toast-in {
+  animation: toastIn 0.25s ease-out;
+}
+

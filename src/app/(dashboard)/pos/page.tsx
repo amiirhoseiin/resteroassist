@@ -1,20 +1,21 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { createOrGetTableOrder } from "@/actions/order-actions";
-import { OrderDrawer } from "@/components/pos/OrderDrawer";
-import { 
-  UtensilsCrossed, 
-  Users, 
-  Clock, 
-  CheckCircle2, 
-  Plus, 
-  RefreshCw, 
-  Receipt,
-  Sparkles
-} from "lucide-react";
-import { formatToman, toPersianDigits, ORDER_STATUS_MAP } from "@/lib/utils";
+import { AiScratchpad } from "@/components/pos/AiScratchpad";
+import { MenuBrowser } from "@/components/pos/MenuBrowser";
+import { OrderTicket } from "@/components/pos/OrderTicket";
+import { useToast } from "@/components/ui/ToastProvider";
+import { Loader2, Plus, RefreshCw, Users } from "lucide-react";
+import {
+  cn,
+  formatToman,
+  parseTableNumber,
+  TABLE_STATUS_MAP,
+  toPersianDigits,
+  translateServerError,
+} from "@/lib/utils";
 
 interface Table {
   id: string;
@@ -52,13 +53,15 @@ interface MenuItem {
 }
 
 export default function PosPage() {
+  const { showToast } = useToast();
   const [tables, setTables] = useState<Table[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [selectedTable, setSelectedTable] = useState<Table | null>(null);
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [openingTableId, setOpeningTableId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     const supabase = createClient();
@@ -70,7 +73,14 @@ export default function PosPage() {
       supabase.from("menu_items").select("*").eq("is_available", true).order("category"),
     ]);
 
-    if (tablesRes.data) setTables(tablesRes.data);
+    if (tablesRes.data) {
+      setTables(
+        [...tablesRes.data].sort(
+          (a: Table, b: Table) =>
+            parseTableNumber(a.table_number) - parseTableNumber(b.table_number)
+        )
+      );
+    }
     if (ordersRes.data) setOrders(ordersRes.data);
     if (itemsRes.data) setOrderItems(itemsRes.data);
     if (menuRes.data) setMenuItems(menuRes.data);
@@ -80,7 +90,7 @@ export default function PosPage() {
   useEffect(() => {
     fetchData();
 
-    // Subscribe to real-time changes on orders and order_items
+    // اشتراک زنده روی سفارش‌ها و آیتم‌های سفارش
     const supabase = createClient();
     const channel = supabase
       .channel("pos_realtime_channel")
@@ -106,15 +116,22 @@ export default function PosPage() {
   }, [fetchData]);
 
   const handleTableClick = async (table: Table) => {
-    setSelectedTable(table);
-    const existingOrder = orders.find((o) => o.table_id === table.id);
+    setSelectedTableId(table.id);
+    const existingOrder = orders.find((order) => order.table_id === table.id);
+    if (existingOrder) return;
 
-    if (!existingOrder) {
-      // Auto-open new order for table
-      const res = await createOrGetTableOrder(table.id);
-      if (res.success && res.order) {
-        setOrders((prev) => [...prev, res.order]);
-      }
+    setOpeningTableId(table.id);
+    const res = await createOrGetTableOrder(table.id);
+    setOpeningTableId(null);
+
+    if (!res.success) {
+      showToast("error", translateServerError(res.error));
+      return;
+    }
+    if (res.order) {
+      setOrders((prev) =>
+        prev.some((order) => order.id === res.order.id) ? prev : [...prev, res.order]
+      );
     }
   };
 
@@ -124,183 +141,191 @@ export default function PosPage() {
     setRefreshing(false);
   };
 
+  const menuItemMap = useMemo(
+    () =>
+      menuItems.reduce<Record<string, { name: string; price_toman: number }>>(
+        (acc, item) => {
+          acc[item.id] = { name: item.name, price_toman: item.price_toman };
+          return acc;
+        },
+        {}
+      ),
+    [menuItems]
+  );
+
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="flex items-center gap-3 text-slate-400 text-sm">
-          <RefreshCw className="w-5 h-5 animate-spin text-brand-500" />
-          <span>در حال بارگذاری وضعیت میزها و سالن...</span>
+      <div className="flex flex-1 items-center justify-center p-8">
+        <div className="flex items-center gap-3 text-sm text-slate-500">
+          <RefreshCw className="h-5 w-5 animate-spin text-emerald-600" />
+          <span>در حال بارگذاری سالن و فهرست میزها...</span>
         </div>
       </div>
     );
   }
 
-  // Active order for currently selected table
+  const selectedTable = tables.find((table) => table.id === selectedTableId) || null;
   const currentTableOrder = selectedTable
-    ? orders.find((o) => o.table_id === selectedTable.id) || null
+    ? orders.find((order) => order.table_id === selectedTable.id) || null
     : null;
-
   const currentOrderItems = currentTableOrder
-    ? orderItems.filter((it) => it.order_id === currentTableOrder.id)
+    ? orderItems.filter((item) => item.order_id === currentTableOrder.id)
     : [];
 
+  const emptyCount = tables.filter(
+    (table) => !orders.some((order) => order.table_id === table.id)
+  ).length;
+  const openCount = orders.filter((order) => order.status === "open").length;
+  const settlingCount = orders.filter((order) => order.status === "settling").length;
+
   return (
-    <div className="flex-1 p-4 lg:p-8 space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="flex-1 p-4 lg:p-6">
+      {/* سربرگ صفحه */}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-black text-slate-100 tracking-tight">
-              مدیریت میزها و ثبت سفارش سالن
-            </h1>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              همگام‌سازی زنده فعال
-            </span>
-          </div>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            پشتیبانی از ثبت همزمان چند گارسون روی یک میز، قفل پخت آشپزخانه و تبدیل گفتار فارسی به فاکتور
+          <h1 className="text-xl font-black text-slate-900 sm:text-2xl">ثبت سفارش سالن</h1>
+          <p className="mt-1 text-xs text-slate-500 sm:text-sm">
+            میز را انتخاب کنید و سفارش را از منوی رستوران یا با دستیار هوشمند ثبت کنید.
           </p>
         </div>
-
         <button
           type="button"
           onClick={handleManualRefresh}
-          className="self-start sm:self-auto flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-850 border border-slate-800 text-xs text-slate-300 transition-colors"
+          className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-bold text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin text-brand-400" : ""}`} />
+          <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin text-emerald-600")} />
           <span>بروزرسانی داده‌ها</span>
         </button>
       </div>
 
-      {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80">
-          <div className="text-slate-400 text-xs font-medium">کل میزهای سالن</div>
-          <div className="text-xl sm:text-2xl font-black text-slate-100 mt-1">
-            {toPersianDigits(tables.length)} میز
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80">
-          <div className="text-emerald-400 text-xs font-medium">میزهای فعال (در حال سرو)</div>
-          <div className="text-xl sm:text-2xl font-black text-emerald-400 mt-1">
-            {toPersianDigits(orders.filter((o) => o.status === "open").length)} میز
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80">
-          <div className="text-amber-400 text-xs font-medium">در انتظار تسویه (صندوق)</div>
-          <div className="text-xl sm:text-2xl font-black text-amber-400 mt-1">
-            {toPersianDigits(orders.filter((o) => o.status === "settling").length)} میز
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80">
-          <div className="text-slate-400 text-xs font-medium">میزهای خالی و آماده پذیرش</div>
-          <div className="text-xl sm:text-2xl font-black text-slate-300 mt-1">
-            {toPersianDigits(tables.length - orders.length)} میز
-          </div>
-        </div>
-      </div>
-
-      {/* Tables Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {tables.map((table) => {
-          const activeOrder = orders.find((o) => o.table_id === table.id);
-          const activeItems = activeOrder
-            ? orderItems.filter((it) => it.order_id === activeOrder.id && it.status !== "cancelled")
-            : [];
-          const totalAmount = activeItems.reduce(
-            (sum, it) => sum + it.quantity * it.unit_price_toman,
-            0
-          );
-
-          const status = activeOrder ? activeOrder.status : "free";
-
-          return (
-            <div
-              key={table.id}
-              onClick={() => handleTableClick(table)}
-              className={`p-5 rounded-2xl border cursor-pointer transition-all hover:scale-[1.02] hover:shadow-xl relative overflow-hidden ${
-                status === "settling"
-                  ? "bg-amber-500/10 border-amber-500/40 hover:border-amber-400"
-                  : status === "open"
-                  ? "bg-slate-900/90 border-brand-500/40 hover:border-brand-400 shadow-md"
-                  : "bg-slate-900/40 border-slate-800/80 hover:border-slate-700 opacity-90"
-              }`}
-            >
-              {/* Status Header */}
-              <div className="flex items-center justify-between mb-3">
-                <span className="font-black text-base text-slate-100">
-                  {table.table_number}
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[65fr_35fr]">
+        {/* ستون اصلی (سمت راست در RTL) */}
+        <div className="min-w-0">
+          {/* نوار انتخاب میز */}
+          <section className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 font-bold text-slate-800">
+                <Users className="h-5 w-5 text-emerald-600" />
+                <span>سالن و میزها</span>
+              </h2>
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                <span className="rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 font-bold text-slate-500">
+                  خالی و آماده: {toPersianDigits(emptyCount)}
                 </span>
-
-                {status === "free" ? (
-                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
-                    آزاد
-                  </span>
-                ) : status === "settling" ? (
-                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse font-medium">
-                    در حال تسویه
-                  </span>
-                ) : (
-                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium">
-                    سفارش جاری
-                  </span>
-                )}
-              </div>
-
-              {/* Table details */}
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between text-slate-400">
-                  <span className="flex items-center gap-1.5">
-                    <Users className="w-3.5 h-3.5" />
-                    <span>ظرفیت:</span>
-                  </span>
-                  <span className="font-medium text-slate-300">
-                    {toPersianDigits(table.capacity)} نفر
-                  </span>
-                </div>
-
-                {activeOrder ? (
-                  <>
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span>تعداد اقلام ثبت‌شده:</span>
-                      <span className="font-bold text-slate-200">
-                        {toPersianDigits(activeItems.length)} ردیف
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
-                      <span className="text-slate-400">مبلغ سفارش:</span>
-                      <span className="font-extrabold text-brand-400 text-sm">
-                        {formatToman(totalAmount)}
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <div className="pt-2 text-slate-500 text-[11px] flex items-center gap-1.5">
-                    <Plus className="w-3.5 h-3.5 text-brand-400" />
-                    <span>کلیک کنید تا سفارش باز شود</span>
-                  </div>
-                )}
+                <span className="rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-1 font-bold text-emerald-700">
+                  سفارش فعال: {toPersianDigits(openCount)}
+                </span>
+                <span className="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-1 font-bold text-amber-800">
+                  در حال تسویه: {toPersianDigits(settlingCount)}
+                </span>
               </div>
             </div>
-          );
-        })}
-      </div>
 
-      {/* Slide-over Order Drawer */}
-      {selectedTable && (
-        <OrderDrawer
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-4">
+              {tables.map((table) => {
+                const activeOrder = orders.find((order) => order.table_id === table.id);
+                const activeItems = activeOrder
+                  ? orderItems.filter(
+                      (item) =>
+                        item.order_id === activeOrder.id && item.status !== "cancelled"
+                    )
+                  : [];
+                const totalAmount = activeItems.reduce(
+                  (sum, item) => sum + item.quantity * item.unit_price_toman,
+                  0
+                );
+                const status: "empty" | "open" | "settling" = activeOrder
+                  ? activeOrder.status === "settling"
+                    ? "settling"
+                    : "open"
+                  : "empty";
+                const statusInfo = TABLE_STATUS_MAP[status];
+                const isSelected = selectedTableId === table.id;
+                const isOpening = openingTableId === table.id;
+
+                return (
+                  <button
+                    key={table.id}
+                    type="button"
+                    onClick={() => handleTableClick(table)}
+                    disabled={isOpening}
+                    className={cn(
+                      "relative min-h-[104px] rounded-xl border-2 p-3.5 text-start transition-all",
+                      isSelected
+                        ? "border-emerald-500 bg-emerald-50/70 ring-4 ring-emerald-500/25"
+                        : status === "settling"
+                        ? "border-amber-300 bg-amber-50/60 hover:border-amber-400"
+                        : status === "open"
+                        ? "border-slate-300 bg-white hover:border-emerald-400"
+                        : "border-slate-200 bg-slate-50/60 hover:border-slate-300"
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-base font-black text-slate-800">
+                        {table.table_number}
+                      </span>
+                      <span
+                        className={cn(
+                          "rounded-full border px-2 py-0.5 text-[10px] font-bold",
+                          statusInfo.badge
+                        )}
+                      >
+                        {statusInfo.label}
+                      </span>
+                    </div>
+
+                    <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+                      <Users className="h-3.5 w-3.5" />
+                      <span>ظرفیت: {toPersianDigits(table.capacity)} نفر</span>
+                    </div>
+
+                    {activeOrder ? (
+                      <div className="mt-1.5 text-[11px] font-extrabold text-slate-700">
+                        {formatToman(totalAmount)}
+                      </div>
+                    ) : (
+                      <div className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400">
+                        <Plus className="h-3 w-3" />
+                        <span>برای باز کردن سفارش کلیک کنید</span>
+                      </div>
+                    )}
+
+                    {isOpening && (
+                      <span className="absolute inset-0 grid place-items-center rounded-xl bg-white/70">
+                        <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* دفترچه هوشمند ثبت سفارش */}
+          <AiScratchpad
+            orderId={currentTableOrder?.id ?? null}
+            tableNumber={selectedTable?.table_number ?? null}
+            menuItemMap={menuItemMap}
+            onItemsAdded={fetchData}
+          />
+
+          {/* منوی رستوران */}
+          <MenuBrowser
+            menuItems={menuItems}
+            orderId={currentTableOrder?.id ?? null}
+            onAdded={fetchData}
+          />
+        </div>
+
+        {/* ستون فاکتور (سمت چپ در RTL) */}
+        <OrderTicket
           table={selectedTable}
-          initialOrder={currentTableOrder}
-          initialItems={currentOrderItems}
-          menuItems={menuItems}
-          onClose={() => setSelectedTable(null)}
-          onRefreshNeeded={fetchData}
+          order={currentTableOrder}
+          items={currentOrderItems}
+          menuItemMap={menuItemMap}
+          onChanged={fetchData}
         />
-      )}
+      </div>
     </div>
   );
 }

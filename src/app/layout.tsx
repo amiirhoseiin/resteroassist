@@ -1,17 +1,19 @@
 import type { Metadata } from "next";
 import { Vazirmatn } from "next/font/google";
 import "./globals.css";
+import { ToastProvider } from "@/components/ui/ToastProvider";
 
 const vazirmatn = Vazirmatn({
   subsets: ["arabic", "latin"],
   variable: "--font-vazirmatn",
   display: "swap",
-  weight: ["300", "400", "500", "600", "700", "800"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
 export const metadata: Metadata = {
-  title: "رسترو اسیست | سامانه مدیریت شیفت و سفارش رستوران",
-  description: "سامانه ابری مدیریت همزمان سالن، آشپزخانه (KDS)، هوش مصنوعی و صندوق رستوران‌ها و کافه‌ها",
+  title: "سیستم یکپارچه مدیریت شیفت رستوران",
+  description:
+    "سامانه مدیریت زنده سالن، آشپزخانه (KDS)، دستیار هوشمند و صندوق رستوران‌ها و کافه‌ها",
 };
 
 export default function RootLayout({
@@ -21,8 +23,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fa" dir="rtl" className={vazirmatn.variable}>
-      <body className="min-h-screen bg-slate-50 dark:bg-slate-950 font-vazir antialiased selection:bg-brand-500 selection:text-white">
-        {children}
+      <body
+        className={`${vazirmatn.className} font-vazir min-h-screen bg-slate-100 text-slate-900 antialiased`}
+        style={{ fontFeatureSettings: '"ss01"' }}
+      >
+        <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
   );
