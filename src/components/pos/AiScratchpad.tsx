@@ -178,7 +178,7 @@ export function AiScratchpad({
         setSwapQuery("");
         setIsPreviewOpen(true);
         if (res.source === "heuristic") {
-          showToast("info", "پردازش نقشهٔ سفارش با موتور هوشمند محلی (آفلاین) انجام شد.");
+          showToast("info", "پردازش یادداشت سفارش با موتور هوشمند محلی (آفلاین) انجام شد.");
         }
       } else {
         showToast(
