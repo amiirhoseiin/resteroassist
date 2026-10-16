@@ -1,6 +1,7 @@
 # 🍽️ Resteroassist | Real-Time Restaurant & Café Order-to-Cash Platform
 
 [![Next.js](https://img.shields.io/badge/Next.js-15.5-black?logo=next.js)](https://nextjs.org/)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel%20Production-blueviolet?logo=vercel)](https://resteroassist.vercel.app)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%20%7C%20RLS%20%7C%20Realtime-emerald?logo=supabase)](https://supabase.com/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-RTL%20%7C%20Vazirmatn-sky?logo=tailwindcss)](https://tailwindcss.com/)
 [![Playwright](https://img.shields.io/badge/E2E%20Tests-Playwright%20(9%2F9%20Pass)-green?logo=playwright)](https://playwright.dev/)
