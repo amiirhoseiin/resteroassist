@@ -170,3 +170,17 @@ npm run test:e2e
 ## ⚖️ License
 
 MIT License. Designed & built for Iranian hospitality operations.
+
+## 📄 Documentation
+
+- [DECISIONS.md](file:///d:/Freelance%20project/resteroassist/DECISIONS.md): Architectural Decision Records (ADRs), trade-offs, and design rationale.
+- [HANDOVER.md](file:///d:/Freelance%20project/resteroassist/HANDOVER.md): Operations manual and shift manager handover guide.
+- [AI_USAGE.md](file:///d:/Freelance%20project/resteroassist/AI_USAGE.md): AI architecture, prompt defense-in-depth, and offline NLP fallback specifications.
+- [SECURITY_AUDIT_REPORT.md](file:///d:/Freelance%20project/resteroassist/SECURITY_AUDIT_REPORT.md): Red team security assessment, threat modeling, and invariant testing.
+
+---
+
+## ⚖️ License
+
+MIT License. Designed & built for Iranian hospitality operations.
+
