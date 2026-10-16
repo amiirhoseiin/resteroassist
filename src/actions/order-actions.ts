@@ -438,71 +438,26 @@ export async function updateOrderItemDetails(input: z.infer<typeof UpdateItemDet
       return { success: false, error: "دسترسی غیرمجاز برای ویرایش سفارش" };
     }
 
-    // Fetch existing item
-    const { data: item, error: fetchErr } = await supabase
-      .from("order_items")
-      .select("id, order_id, restaurant_id, status, version")
-      .eq("id", validated.data.itemId)
-      .eq("restaurant_id", restaurantId)
-      .single();
-
-    if (fetchErr || !item) {
-      return { success: false, error: "آیتم مورد نظر یافت نشد." };
-    }
-
-    // Check version for optimistic locking
-    if (item.version !== validated.data.expectedVersion) {
-      return {
-        success: false,
-        error: "این آیتم همزمان توسط همکار دیگری تغییر یافته است؛ لطفاً صفحه را بروزرسانی کنید.",
-      };
-    }
-
-    // Check status: only pending items can be edited
-    if (item.status !== "pending") {
-      return {
-        success: false,
-        error: "امکان تغییر وجود ندارد؛ آشپزخانه پخت این آیتم را آغاز کرده یا آماده شده است.",
-      };
-    }
-
-    // Update item
-    const { data: updatedItem, error: updateErr } = await supabase
-      .from("order_items")
-      .update({
-        quantity: validated.data.quantity,
-        notes: validated.data.notes || null,
-        version: item.version + 1,
-      })
-      .eq("id", validated.data.itemId)
-      .eq("version", item.version)
-      .select()
-      .single();
+    // Server-authoritative update (security hardening): the audited RPC enforces
+    // pending-only edits, optimistic locking, the cooking lock, and writes the audit event itself.
+    const { data: updatedItem, error: updateErr } = await supabase.rpc("rpc_update_item_details", {
+      p_item_id: validated.data.itemId,
+      p_quantity: validated.data.quantity,
+      p_notes: validated.data.notes || null,
+      p_expected_version: validated.data.expectedVersion,
+    });
 
     if (updateErr || !updatedItem) {
-      return { success: false, error: "خطا در بروزرسانی اطلاعات آیتم: " + updateErr?.message };
+      return { success: false, error: updateErr?.message || "خطا در بروزرسانی اطلاعات آیتم" };
     }
-
-    // Record audit event in order_events for Kitchen Realtime Notification
-    await supabase.from("order_events").insert({
-      restaurant_id: restaurantId,
-      order_id: item.order_id,
-      actor_id: actorId,
-      event_type: "item_edited",
-      payload: {
-        item_id: item.id,
-        new_quantity: validated.data.quantity,
-        new_notes: validated.data.notes,
-      },
-    });
 
     logAuditEvent({
       restaurant_id: restaurantId,
       actor_id: actorId,
-      order_id: item.order_id,
+      order_id: updatedItem.order_id,
       action: "order_item_edited",
       latency_ms: Date.now() - startTime,
-      metadata: { itemId: item.id, quantity: validated.data.quantity },
+      metadata: { itemId: updatedItem.id, quantity: validated.data.quantity },
     });
 
     revalidatePath("/pos");

@@ -26,7 +26,7 @@ During busy weekend dinner rushes, restaurants and cafés commonly suffer from t
 - **AI Smart Waiter Scratchpad:**  
   Instead of scrolling through multi-level menus, waiters can type or voice-dictate natural colloquial Persian customer notes:  
   *«۲ تا کباب لقمه یکی با کره اضافه، یه ته‌چین بدون بادمجان و دو تا دوغ محلی»*  
-  Tapping **«استخراج ساختار یافته» (Parse Structured Order)** instantly resolves the dishes against the active menu catalog with official database pricing.
+  Tapping **«شناسایی هوشمند اقلام» (Identify Items Intelligently)** instantly resolves the dishes against the active menu catalog with official database pricing.
 - **Concurrent Waiter Ordering:** If two waiters take orders for the same table simultaneously (e.g. food vs. drinks), both orders merge seamlessly without race conditions or data loss.
 
 ### Step 2: Kitchen & Bar (Kitchen Display System — KDS)
@@ -70,7 +70,7 @@ During busy weekend dinner rushes, restaurants and cafés commonly suffer from t
 
 1. **Staff Management (`/staff`):**
    - General Managers and Owners can recruit new staff members, set credentials, and assign branches and roles (`waiter`, `kitchen`, `cashier`, `manager`).
-   - Role permissions can be updated on the fly; password resets and role terminations take effect immediately.
+   - Role permissions can be updated on the fly; they take effect on that staff member's device at their next sign-in or token refresh, and removing a staff member blocks their future sign-ins.
 
 2. **Menu & Price Management (`/menu`):**
    - Managers have complete control over item names, categories, and Toman pricing.
@@ -78,6 +78,38 @@ During busy weekend dinner rushes, restaurants and cafés commonly suffer from t
 
 ---
 
-## 5. Contact & Support
+## 5. Known Limitations (stated plainly)
+
+1. **Multi-branch views are not filtered yet.** Every screen shows all branches of the restaurant together; the data model already stores `branch_id` on every operational table, but the UI does not filter by it. Single-branch venues (today's customers) are unaffected.
+2. **Role changes ride the sign-in token.** A role change or staff removal takes effect at that person's next sign-in or token refresh (§4). There is no instant-revocation list in this MVP.
+3. **The AI scratchpad is authenticated but not rate-limited.** SCOPE §3 lists a rate limiter; it is the top-ranked next build (§6). Mitigation today: the deterministic offline engine is the default path, and the optional cloud call is bounded by an 8-second timeout.
+4. **The automated suites expect a fresh database.** Run `npx supabase db reset` before `npm run test:e2e` or `npm run test:security` (neither is idempotent on a dirty database yet).
+5. **Route-level role gating is cosmetic.** Any signed-in staff member can open any dashboard URL (e.g. a waiter could open `/kds`). Data stays within their restaurant and every action is re-authorized in the database, so this is UI polish, not a hole.
+6. **Un-mapped server errors surface in English.** Common failure paths are translated to Persian client-side; rare database errors show the raw English text.
+7. **No physical receipt printer yet.** The 80mm receipt exists as a print-ready on-screen preview; ESC/POS printer integration and a formal fiscal/Z-report export are next-phase work.
+
+---
+
+## 6. The Next Five Things I Would Build (ranked)
+
+1. **AI rate limiting + cloud-spend circuit breaker** — the only unmet item in SCOPE §3's AI guard list and the last open security-audit finding (F-08). Cheap to add, closes abuse before any public launch.
+2. **Durable test fixtures (idempotent suites)** — today both suites must run on a fresh `db reset`; fixtures with per-spec isolation make CI trustworthy (also audit F-10).
+3. **Branch-aware filtering across POS / KDS / cashier / reports** — the data model is ready; only the UI filter is missing, and any second-branch customer hits this on day one.
+4. **Shift close (Z-report) + cash-drawer reconciliation** — settled bills already carry timestamps; adding shift open/close, counted-vs-expected cash, and a discrepancy log turns the cashier module into a real accounting tool.
+5. **Receipt printing + fiscal export (per-shift PDF/CSV)** — the 80mm preview exists; printers and export files are what venues ask for next.
+
+---
+
+## 7. Where This Architecture Breaks (10 / 1,000 / 100,000 restaurants)
+
+**At 10 restaurants — the current architecture holds.** One Supabase project + Vercel handle the volume comfortably (a busy branch writes a few hundred rows per minute; Postgres is far from its ceiling). Operations remain manual: migrations applied by hand, demo data seeded via `supabase db reset`, monitoring left to platform defaults. The first real pain is *support*: 10 venues already generate enough "please fix X for us" traffic that per-tenant metrics (settle failures, realtime drops) pay for themselves.
+
+**At 1,000 restaurants — you need a control plane and observability before the database needs scaling.** What breaks first is operations: tenant onboarding must become scripted and self-serve (branch/table provisioning, menu seeding, staff invites); migrations must be fleet-wide, zero-downtime, and rollback-capable; and someone must *see* production — structured logs shipped to a sink, alerts on the money paths (`rpc_settle_order`, `rpc_create_order`, `rpc_update_item_details`), and per-tenant realtime health. Postgres wants read replicas for reporting and a job runner (pg_cron/queues) for nightly exports. Tenancy shifts toward one organization with per-region projects, or dedicated projects for large chains.
+
+**At 100,000 restaurants — this is a different company and a re-architecture.** A single primary cannot absorb the global write rate; RLS-as-tenancy still works logically, but physically you shard into regional cells (each cell = a Postgres cluster + its tenants + its realtime), with an event stream (Kafka/pgstream) feeding cross-cell analytics and regional data-residency. Settlement becomes financial-grade: idempotency keys on every money mutation, double-entry ledger tables, acquirer reconciliation, WORM-style audit storage, and KMS-managed per-tenant encryption. The good news: the seams are already cut right — server-authoritative writes, versioned optimistic locking, sealed-invoice immutability, and keyed audit events are exactly the primitives you would shard along. You would not "run the MVP harder"; you would build the platform the MVP proved the invariants for.
+
+---
+
+## 8. Contact & Support
 
 For system administration, schema migrations, or infrastructure support, refer to [README.md](file:///d:/Freelance%20project/resteroassist/README.md) and [DECISIONS.md](file:///d:/Freelance%20project/resteroassist/DECISIONS.md).

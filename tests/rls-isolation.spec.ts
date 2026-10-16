@@ -50,7 +50,7 @@ test.describe("Multi-Tenant RLS Data Isolation Tests", () => {
     expect(hizomTables).toEqual([]);
   });
 
-  test("RPC Security Invoker: Roohi staff cannot mutate or add items to Hizom orders", async () => {
+  test("RPC Tenant Guard (SECURITY DEFINER self-check): Roohi staff cannot mutate or add items to Hizom orders", async () => {
     const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     await client.auth.signInWithPassword({
       email: "amir@roohi.ir",
