@@ -104,9 +104,12 @@ test.describe("Full Live Shift Operations: Waiter -> KDS -> Cashier Loop", () =>
       password: "Password123!",
     });
 
+    // Hardened settle (security migration 20261017000000): requires status='settling'
+    // and an explicit expected version. Seed order for table 12 has version = 2.
     const settleRes = await cashierClient.rpc("rpc_settle_order", {
       p_order_id: "11111111-5555-1111-1111-000000000012",
       p_discount_toman: 50000,
+      p_expected_version: 2,
     });
 
     expect(settleRes.error).toBeNull();

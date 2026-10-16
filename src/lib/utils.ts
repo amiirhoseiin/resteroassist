@@ -124,6 +124,36 @@ export function translateServerError(message: string | null | undefined): string
   ) {
     return "توجه: این سفارش توسط همکار دیگری به‌روز‌رسانی شد. اطلاعات جدید بارگذاری گردید.";
   }
+  if (m.includes("order must be locked for checkout")) {
+    return "برای ثبت پرداخت، ابتدا فاکتور را برای تسویه قفل کنید.";
+  }
+  if (m.includes("checkout requires")) {
+    return "برای ثبت پرداخت، صفحه را بروزرسانی کنید و مجدداً اقدام کنید.";
+  }
+  if (m.includes("cannot exceed order subtotal")) {
+    return "مبلغ تخفیف نمی‌تواند از جمع سفارش بیشتر باشد.";
+  }
+  if (m.includes("only pending items can be edited")) {
+    return "امکان ویرایش وجود ندارد؛ فقط اقلام در انتظار پخت قابل تغییر هستند.";
+  }
+  if (m.includes("paid_order_immutable") || m.includes("settled order") || m.includes("order is already paid")) {
+    return "این فاکتور تسویه‌شده است و قابل تغییر نیست.";
+  }
+  if (m.includes("served items are final") || m.includes("final and cannot be cancelled")) {
+    return "آیتم تحویل‌شده نهایی است و قابل لغو نیست.";
+  }
+  if (
+    m.includes("cancelled items cannot be reactivated") ||
+    m.includes("cannot be reverted") ||
+    m.includes("invalid transition") ||
+    m.includes("must go through") ||
+    m.includes("unsupported status transition")
+  ) {
+    return "این تغییر وضعیت برای این آیتم مجاز نیست.";
+  }
+  if (m.includes("kitchen staff cannot")) {
+    return "پرسنل آشپزخانه مجاز به این عملیات نیستند.";
+  }
   if (m.includes("only cashiers and managers can apply discounts")) {
     return "فقط صندوقدار و مدیر شعبه مجاز به اعمال تخفیف هستند.";
   }

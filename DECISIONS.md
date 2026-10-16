@@ -129,3 +129,33 @@
   3. **Dev Server & Hydration Stability:** Cleared corrupted `.next` webpack cache, suppressed false-positive browser autofill hydration mismatches on login inputs, and verified 100% green status across all 7 Playwright test suites.
 - **Trade-off:** Consistent, pixel-perfect dark theme across all 5 operational views with zero layout shifts on any viewport.
 
+---
+
+## Decision 014 (Retrospective — revisit): OpenRouter-First AI Path Was the Wrong Default
+
+- **Context:** The frozen baseline (SCOPE §7, Decision 005) made a cloud LLM (OpenRouter relay) the primary parser with a 4-second timeout and a manual-picker fallback. Two facts changed our mind: (1) measured generation latency with default model thinking exceeded the timeout on realistic network conditions — the cloud path burned its full timeout and aborted on nearly every request; (2) the deterministic Persian offline engine we shipped as a safety net turned out to be *better* for this task — single-digit milliseconds, fully deterministic, zero cost, and stable enough to run exact-match E2E assertions.
+- **Decision:** Invert the hierarchy. The offline engine is the default, always-wired layer. The cloud model is an optional enhancement: Priority 1 direct Google Gemini Flash (`thinkingBudget: 0`, 8s hard cap), Priority 2 OpenRouter relay, automatic degradation to the local engine on any error or timeout. The shipped behavior no longer depends on any key or network.
+- **Alternative considered:** (a) keeping cloud-first and simply raising the timeout — rejected: it converts network latency into dead UI time at the tableside during a dinner rush; (b) removing the cloud path entirely — rejected: the optional quality upgrade is real value when available, and the fallback makes it risk-free.
+- **Trade-off:** The offline engine reads only the tenant's active menu vocabulary and modeled modifiers — it does not "understand" arbitrary phrasing the way an LLM can. Accepted: at tableside, a bounded, explainable, auditable parser beats a fluent one whose latency and output both vary.
+- **Revisit if:** direct-Gemini latency on target networks proves consistently sub-second — then cloud-first becomes defensible for richer note understanding.
+
+---
+
+## Decision 015 (Retrospective — revisit): JWT-Claim Authorization Has a Revocation Window
+
+- **Context:** Decision 002 embeds `restaurant_id`/`role` into the JWT for throughput. Consequence surfaced by adversarial review: a role change or staff removal only takes effect when the token is refreshed — a demoted or removed staff member keeps their previous privileges for the remaining token lifetime, and nothing server-side re-checks `staff_profiles` on each action.
+- **Decision:** For the MVP, keep claims for fast RLS checks, but treat revocation as "re-issue/rotate": the ops guide documents the window (HANDOVER §4), staff removal blocks future sign-ins immediately, and role changes are declared to take effect at the next sign-in or token refresh.
+- **Alternative considered:** (a) checking `staff_profiles` on every request (immediate revocation, but a per-policy join on the hottest path); (b) short token TTLs with silent refresh (tighter SLA, more auth chatter); (c) a revoked-user denylist checked server-side in a hook.
+- **Trade-off:** Peak-shift database throughput and standard GoTrue behavior prioritized over instantaneous revocation. Accepted at MVP scale, where staff changes during service are rare and manager-driven.
+- **Revisit at:** multi-branch rollout or any deployment where instant revocation becomes a stated requirement.
+
+---
+
+## Decision 016 (Retrospective — revisit): Server-Authoritative Write Model (the audit changed the architecture)
+
+- **Context:** An adversarial review of the deployed stack (see SECURITY_AUDIT_REPORT.md) proved that Decision 003's "server-authoritative RPCs" were advisory, not enforced: every invariant implemented inside an RPC could be bypassed by issuing the same INSERT/UPDATE directly through PostgREST with the public anon key. Price injection, self-settlement, paid-invoice reopening, cooking-lock bypass, duplicate-race orders, and forged audit events were all executed live. Root cause: `SECURITY INVOKER` controls whose privileges a function runs with — it does not stop callers from skipping the function and writing to the table, because the RLS write policies were coarse "same restaurant" checks with no status/role/column semantics.
+- **Decision:** Move the financial core (`orders`, `order_items`, `order_events`) to a genuinely server-authoritative model in migration `20261017000000_security_hardening.sql`: direct INSERT/UPDATE/DELETE revoked from `anon`/`authenticated` (SELECT-only), and every mutation behind self-checking `SECURITY DEFINER` RPCs (tenant + role re-verified inside each transaction, `search_path` pinned). The same migration adds the real transition matrix to `rpc_update_item_status` (cancellation only via the cancel RPC, no resurrection, served is terminal), settle preconditions (`status='settling'` + required expected version), `PAID_ORDER_IMMUTABLE` triggers that bind for every role including `service_role` (verified), a partial unique index + advisory lock + idempotent conflict handling for one-active-order-per-table, and a new `rpc_update_item_details` that removes the last direct-DML app path.
+- **Alternative considered:** (a) Keeping direct DML and re-implementing every invariant in BEFORE INSERT/UPDATE triggers plus column-level grants (the audit's option 2) — rejected: duplicates the invariant set in two places, is harder to review and to keep in sync with the RPCs, and still leaves column-level holes; (b) RLS-only tightening (`WITH CHECK` policies) — rejected: policies cannot express "who may call which transition" without duplicating the RPC logic anyway. Revoke + SECURITY DEFINER is the pattern Supabase itself recommends for this exact class.
+- **Trade-off:** Every future mutation must ship as a migration + RPC (slightly slower iteration), and `SECURITY DEFINER` demands discipline (pinned `search_path`, explicit tenant/role checks in every function — all satisfied here). In exchange, the invariants the docs, the UI, and the demo all claim are now enforced by the database kernel, and a committed regression battery (`npm run test:security`, 23 checks) re-proves them on every fresh reset. Verified locally: 23/23 probes + 9/9 E2E on the hardened stack.
+- **Revisit if:** a future feature needs high-frequency column-level writes (e.g. live table timers) — then consider narrow column grants for that specific column instead of broadening table access back to clients.
+

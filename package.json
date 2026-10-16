@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:security": "node scripts/security-probe.cjs",
+    "verify:prod": "node scripts/verify-production-security.cjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

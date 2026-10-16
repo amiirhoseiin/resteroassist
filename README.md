@@ -139,6 +139,28 @@ npm run test:e2e
 4. `tests/staff-and-registration.spec.ts`: Manager hires new staff $\rightarrow$ newly recruited staff logs in successfully; new restaurant self-registration flow.
 5. Menu management test: Manager adds new dish, modifies Toman pricing, and toggles real-time availability.
 
+The hardened database invariants are additionally re-proven on every fresh reset by a committed regression battery (23 checks: deny-matrices, cooking lock, settle preconditions, paid-invoice immutability, order-race convergence):
+
+```bash
+npm run test:security   # scripts/security-probe.cjs — run after `npx supabase db reset`
+```
+
+---
+
+## 🛡️ Security Model & Hardening
+
+The financial core (`orders`, `order_items`, `order_events`) is **server-authoritative**:
+
+- **SELECT-only for clients.** Direct `INSERT/UPDATE/DELETE` is revoked from `anon`/`authenticated`; every mutation flows through self-checking `SECURITY DEFINER` RPCs that re-verify tenant + role inside the transaction.
+- **Real cooking-lock matrix.** Item transitions follow a strict `pending → preparing → ready → served` state×role matrix; cancellation goes only through the dedicated cancel RPC (manager/owner once cooking started; served items are final; no resurrection).
+- **Sealed invoices are immutable.** Database triggers reject any write to a paid order or its items — for every role, including `service_role` (proven by regression probe).
+- **Checkout preconditions.** Settlement requires the explicit `settling` (lock-for-checkout) state and a matching expected version, so a stale bill can never be settled silently.
+- **Non-forgeable audit trail.** `order_events` rows can only be written inside RPCs, with `actor_id` taken from the JWT — clients cannot fabricate or misattribute events.
+- **Race-safe table opening.** One active order per table is enforced by a partial unique index + advisory lock + idempotent conflict handling in `rpc_create_order`.
+- **AI guards.** Zero-trust pricing (models never see or emit prices), 300-char clamp, prompt-injection framing, Zod validation, menu whitelisting, and automatic fallback (see [AI_USAGE.md](file:///d:/Freelance%20project/resteroassist/AI_USAGE.md)).
+
+An adversarial red-team audit of the running stack (16 findings, 3 critical, all executed live) and its remediation are documented in [SECURITY_AUDIT_REPORT.md](file:///d:/Freelance%20project/resteroassist/SECURITY_AUDIT_REPORT.md); the responsive fixes live in migration `20261017000000_security_hardening.sql` (see [DECISIONS.md](file:///d:/Freelance%20project/resteroassist/DECISIONS.md) #016).
+
 ---
 
 ## 🚀 Production Deployment (Vercel + Supabase Cloud)
@@ -153,24 +175,13 @@ npm run test:e2e
    - `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase Cloud project URL.
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase Anon public key.
    - `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase Service Role secret key.
-   - `OPENROUTER_API_KEY`: OpenRouter API key for Gemini 2.5 Flash (optional; offline engine active by default).
-   - `AI_MODEL`: `google/gemini-2.5-flash`
+   - `GOOGLE_GENERATIVE_AI_API_KEY`: Google AI Studio key for the direct Gemini Flash scratchpad — priority 1 (optional; offline engine active by default).
+   - `GEMINI_MODEL`: `gemini-3.8-flash` (optional, this is the default)
+   - `OPENROUTER_API_KEY`: OpenRouter API key as an optional cloud relay — priority 2 (optional).
+   - `AI_MODEL`: `google/gemini-2.5-flash` (used only with OpenRouter)
    - `NEXT_PUBLIC_APP_URL`: Your production Vercel URL (e.g. `https://your-restaurant-app.vercel.app`).
 
 ---
-
-## 📄 Documentation
-
-- [DECISIONS.md](file:///d:/Freelance%20project/resteroassist/DECISIONS.md): Architectural Decision Records (ADRs), trade-offs, and design rationale.
-- [HANDOVER.md](file:///d:/Freelance%20project/resteroassist/HANDOVER.md): Operations manual and shift manager handover guide.
-- [AI_USAGE.md](file:///d:/Freelance%20project/resteroassist/AI_USAGE.md): AI architecture, prompt defense-in-depth, and offline NLP fallback specifications.
-- [SECURITY_AUDIT_REPORT.md](file:///d:/Freelance%20project/resteroassist/SECURITY_AUDIT_REPORT.md): Red team security assessment, threat modeling, and invariant testing.
-
----
-
-## ⚖️ License
-
-MIT License. Designed & built for Iranian hospitality operations.
 
 ## 📄 Documentation
 

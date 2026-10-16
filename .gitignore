@@ -50,9 +50,7 @@ next-env.d.ts
 PRESENTATION.md
 *presentation*.md
 *PRESENTATION*.md
+presentation-assets/
 
-# confidential security & audit reports
-SECURITY_AUDIT_REPORT.md
-*SECURITY*.md
-*audit*.md
-*AUDIT*.md
+# NOTE: SECURITY_AUDIT_REPORT.md is deliberately TRACKED in this repository (see DECISIONS.md #016),
+# together with its remediation addendum and the regression battery in scripts/.
